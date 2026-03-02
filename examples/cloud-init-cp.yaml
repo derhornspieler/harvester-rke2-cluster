@@ -1,0 +1,125 @@
+#cloud-config
+# =============================================================================
+# Example Cloud-Init: Control Plane Nodes
+# =============================================================================
+# To use this file:
+#   1. Copy to cluster/cloud-init-cp.yaml and customize
+#   2. Set USER_DATA_CP_FILE="cloud-init-cp.yaml" in scripts/.env
+#   3. Run ./scripts/deploy-cluster.sh
+#
+# NOTE: SSH keys are injected separately by Rancher via the Terraform variable
+#       ssh_authorized_keys — do NOT add them here.
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - qemu-guest-agent
+  - iptables
+  - iptables-services
+  - container-selinux
+  - policycoreutils-python-utils
+  - audit
+  - open-vm-tools       # VMware/Harvester guest tools
+  - nfs-utils           # NFS client for shared storage
+  - jq                  # JSON processing (useful for debugging)
+
+write_files:
+  # --- Rocky 9 / RKE2 Repos ---
+  - path: /etc/yum.repos.d/rancher-rke2-common.repo
+    permissions: '0644'
+    content: |
+      [rancher-rke2-common]
+      name=Rancher RKE2 Common
+      baseurl=https://rpm.rancher.io/rke2/latest/common/centos/9/noarch
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://rpm.rancher.io/public.key
+
+  - path: /etc/yum.repos.d/rancher-rke2-1-34.repo
+    permissions: '0644'
+    content: |
+      [rancher-rke2-1-34]
+      name=Rancher RKE2 1.34
+      baseurl=https://rpm.rancher.io/rke2/latest/1.34/centos/9/x86_64
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://rpm.rancher.io/public.key
+
+  - path: /etc/yum.repos.d/epel.repo
+    permissions: '0644'
+    content: |
+      [epel]
+      name=Extra Packages for Enterprise Linux 9
+      metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+
+  # --- Firewall Rules ---
+  - path: /etc/sysconfig/iptables
+    permissions: '0600'
+    content: |
+      *filter
+      :INPUT DROP [0:0]
+      :FORWARD ACCEPT [0:0]
+      :OUTPUT ACCEPT [0:0]
+      -A INPUT -i lo -j ACCEPT
+      -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+      -A INPUT -p icmp -j ACCEPT
+      -A INPUT -p tcp --dport 22 -j ACCEPT
+      -A INPUT -p tcp --dport 6443 -j ACCEPT
+      -A INPUT -p tcp --dport 9345 -j ACCEPT
+      -A INPUT -p tcp --dport 2379:2381 -j ACCEPT
+      -A INPUT -p tcp --dport 10250 -j ACCEPT
+      -A INPUT -p tcp --dport 10257 -j ACCEPT
+      -A INPUT -p tcp --dport 10259 -j ACCEPT
+      -A INPUT -p tcp --dport 30000:32767 -j ACCEPT
+      -A INPUT -p udp --dport 30000:32767 -j ACCEPT
+      -A INPUT -p tcp --dport 4240 -j ACCEPT
+      -A INPUT -p udp --dport 8472 -j ACCEPT
+      -A INPUT -p tcp --dport 4244 -j ACCEPT
+      -A INPUT -p tcp --dport 4245 -j ACCEPT
+      -A INPUT -p tcp --dport 9962 -j ACCEPT
+      -A INPUT -p tcp --dport 9100 -j ACCEPT
+      COMMIT
+
+  # --- Cilium L2 Manifests (auto-applied by RKE2 server) ---
+  - path: /var/lib/rancher/rke2/server/manifests/cilium-lb-ippool.yaml
+    permissions: '0644'
+    content: |
+      apiVersion: "cilium.io/v2alpha1"
+      kind: CiliumLoadBalancerIPPool
+      metadata:
+        name: ingress-pool
+      spec:
+        blocks:
+          - start: "172.16.3.202"
+            stop: "172.16.3.220"
+
+  - path: /var/lib/rancher/rke2/server/manifests/cilium-l2-policy.yaml
+    permissions: '0644'
+    content: |
+      apiVersion: "cilium.io/v2alpha1"
+      kind: CiliumL2AnnouncementPolicy
+      metadata:
+        name: l2-policy
+      spec:
+        serviceSelector:
+          matchLabels: {}
+        nodeSelector:
+          matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+        interfaces:
+          - ^eth1$
+        externalIPs: true
+        loadBalancerIPs: true
+
+runcmd:
+  - mkdir -p /var/lib/rancher/rke2/server/manifests
+  - systemctl enable --now qemu-guest-agent.service
+  - systemctl disable --now firewalld || true
+  - dnf install -y rke2-selinux
+  - systemctl enable --now iptables

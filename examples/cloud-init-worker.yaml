@@ -1,0 +1,121 @@
+#cloud-config
+# =============================================================================
+# Example Cloud-Init: Worker Nodes
+# =============================================================================
+# To use this file:
+#   1. Copy to cluster/cloud-init-worker.yaml and customize
+#   2. Set USER_DATA_WORKER_FILE="cloud-init-worker.yaml" in scripts/.env
+#   3. Run ./scripts/deploy-cluster.sh
+#
+# NOTE: SSH keys are injected separately by Rancher via the Terraform variable
+#       ssh_authorized_keys — do NOT add them here.
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - qemu-guest-agent
+  - iptables
+  - iptables-services
+  - container-selinux
+  - policycoreutils-python-utils
+  - audit
+  - open-vm-tools       # VMware/Harvester guest tools
+  - nfs-utils           # NFS client for shared storage
+  - jq                  # JSON processing (useful for debugging)
+
+write_files:
+  # --- Rocky 9 / RKE2 Repos ---
+  - path: /etc/yum.repos.d/rancher-rke2-common.repo
+    permissions: '0644'
+    content: |
+      [rancher-rke2-common]
+      name=Rancher RKE2 Common
+      baseurl=https://rpm.rancher.io/rke2/latest/common/centos/9/noarch
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://rpm.rancher.io/public.key
+
+  - path: /etc/yum.repos.d/rancher-rke2-1-34.repo
+    permissions: '0644'
+    content: |
+      [rancher-rke2-1-34]
+      name=Rancher RKE2 1.34
+      baseurl=https://rpm.rancher.io/rke2/latest/1.34/centos/9/x86_64
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://rpm.rancher.io/public.key
+
+  - path: /etc/yum.repos.d/epel.repo
+    permissions: '0644'
+    content: |
+      [epel]
+      name=Extra Packages for Enterprise Linux 9
+      metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+
+  # --- Firewall Rules ---
+  - path: /etc/sysconfig/iptables
+    permissions: '0600'
+    content: |
+      *filter
+      :INPUT DROP [0:0]
+      :FORWARD ACCEPT [0:0]
+      :OUTPUT ACCEPT [0:0]
+      -A INPUT -i lo -j ACCEPT
+      -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+      -A INPUT -p icmp -j ACCEPT
+      -A INPUT -p tcp --dport 22 -j ACCEPT
+      -A INPUT -p tcp --dport 6443 -j ACCEPT
+      -A INPUT -p tcp --dport 9345 -j ACCEPT
+      -A INPUT -p tcp --dport 2379:2381 -j ACCEPT
+      -A INPUT -p tcp --dport 10250 -j ACCEPT
+      -A INPUT -p tcp --dport 10257 -j ACCEPT
+      -A INPUT -p tcp --dport 10259 -j ACCEPT
+      -A INPUT -p tcp --dport 30000:32767 -j ACCEPT
+      -A INPUT -p udp --dport 30000:32767 -j ACCEPT
+      -A INPUT -p tcp --dport 4240 -j ACCEPT
+      -A INPUT -p udp --dport 8472 -j ACCEPT
+      -A INPUT -p tcp --dport 4244 -j ACCEPT
+      -A INPUT -p tcp --dport 4245 -j ACCEPT
+      -A INPUT -p tcp --dport 9962 -j ACCEPT
+      -A INPUT -p tcp --dport 9100 -j ACCEPT
+      COMMIT
+
+  # --- ARP Hardening (dual-NIC workers) ---
+  - path: /etc/sysctl.d/90-arp.conf
+    permissions: '0644'
+    content: |
+      net.ipv4.conf.all.arp_ignore=1
+      net.ipv4.conf.all.arp_announce=2
+
+  # --- Policy Routing for Ingress NIC (eth1) ---
+  - path: /etc/NetworkManager/dispatcher.d/10-ingress-routing
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # Policy routing for ingress NIC (eth1)
+      # Ensures traffic from eth1's IP replies via eth1
+      IFACE=$1
+      ACTION=$2
+      if [ "$IFACE" = "eth1" ] && [ "$ACTION" = "up" ]; then
+        IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+        SUBNET=$(ip -4 route show dev eth1 scope link | awk '{print $1}' | head -1)
+        GW=$(ip -4 route show dev eth1 | grep default | awk '{print $3}')
+        [ -z "$GW" ] && GW=$(ip -4 route show default | awk '{print $3}' | head -1)
+        grep -q "^200 ingress" /etc/iproute2/rt_tables || echo "200 ingress" >> /etc/iproute2/rt_tables
+        ip rule add from $IP table ingress priority 100 2>/dev/null || true
+        ip route replace default via $GW dev eth1 table ingress 2>/dev/null || true
+        [ -n "$SUBNET" ] && ip route replace $SUBNET dev eth1 table ingress 2>/dev/null || true
+      fi
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent.service
+  - systemctl disable --now firewalld || true
+  - dnf install -y rke2-selinux
+  - systemctl enable --now iptables
+  - sysctl --system
+  - restorecon -R /etc/NetworkManager/dispatcher.d/ || true

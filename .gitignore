@@ -1,0 +1,8 @@
+# Operator image tarballs (large, user-supplied)
+operators/images/*.tar.gz
+
+# Terraform-rendered manifests
+.rendered/
+
+# Temporary kubeconfig for operator deployment
+.kubeconfig-rke2-operators

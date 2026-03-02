@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-autoscaler-metrics
+  namespace: storage-autoscaler
+  labels:
+    app.kubernetes.io/name: storage-autoscaler
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: storage-autoscaler
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP

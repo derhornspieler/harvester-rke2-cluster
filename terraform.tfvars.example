@@ -1,0 +1,98 @@
+# =============================================================================
+# RKE2 Cluster — Terraform Variables
+# =============================================================================
+# Generate credential files first:  cd cluster && ./prepare.sh
+# Then fill in the values below and run:  terraform plan
+# =============================================================================
+
+# Rancher Connection
+rancher_url   = "https://rancher.example.com"
+rancher_token = "token-xxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Harvester
+harvester_kubeconfig_path       = "./kubeconfig-harvester.yaml"
+harvester_cluster_id            = "c-xxxxx"
+harvester_cloud_credential_name = "my-harvester-credential"
+
+# Cluster
+cluster_name       = "rke2-prod"
+kubernetes_version = "v1.34.2+rke2r1"
+cni                = "cilium"
+traefik_lb_ip        = "192.168.48.2"
+cilium_lb_pool_start = "192.168.48.2"
+cilium_lb_pool_stop  = "192.168.48.20"
+
+# Harvester Networking
+vm_namespace                = "rke2-prod"
+harvester_network_name      = "vm-network"
+harvester_network_namespace = "default"
+# harvester_services_network_name      = "services-network"
+# harvester_services_network_namespace = "default"
+
+# Golden Image (required -- must already exist on Harvester)
+golden_image_name = "rke2-rocky9-golden-20260227"
+
+# Registry / Bootstrap (required)
+bootstrap_registry = "harbor.example.com"
+harbor_fqdn        = "harbor.example.com"
+
+# Harbor Proxy-Cache Mirrors (optional -- defaults shown)
+# harbor_registry_mirrors = ["docker.io", "quay.io", "ghcr.io", "gcr.io", "registry.k8s.io", "docker.elastic.co", "registry.gitlab.com", "docker-registry3.mariadb.com"]
+
+# Private CA (required -- PEM-encoded certificate chain for registry TLS)
+private_ca_pem = <<-EOT
+-----BEGIN CERTIFICATE-----
+<your CA certificate here>
+-----END CERTIFICATE-----
+EOT
+
+# Optional: if bootstrap registry uses a different CA than private_ca_pem
+# bootstrap_registry_ca_pem = <<-EOT
+# -----BEGIN CERTIFICATE-----
+# <bootstrap registry CA>
+# -----END CERTIFICATE-----
+# EOT
+
+# Control Plane Pool
+controlplane_count     = 3
+controlplane_cpu       = "4"
+controlplane_memory    = "16"
+controlplane_disk_size = 80
+
+# General Worker Pool
+general_cpu       = "4"
+general_memory    = "16"
+general_disk_size = 60
+general_min_count = 4
+general_max_count = 10
+
+# Compute Worker Pool
+compute_cpu       = "16"
+compute_memory    = "32"
+compute_disk_size = 80
+compute_min_count = 1
+compute_max_count = 10
+
+# Database Worker Pool
+database_cpu       = "4"
+database_memory    = "24"
+database_disk_size = 80
+database_min_count = 4
+database_max_count = 10
+
+# Docker Hub Auth (optional -- avoids rate limits until Harbor mirrors are up)
+# dockerhub_username = "your-dockerhub-user"
+# dockerhub_token    = "dckr_pat_xxxxx"
+
+# Cloud Provider
+harvester_cloud_provider_kubeconfig_path = "./harvester-cloud-provider-kubeconfig"
+
+# SSH
+ssh_user = "rocky"
+ssh_authorized_keys = [
+  "ssh-ed25519 AAAA... user@host",
+]
+
+# Operator Deployment (optional -- deploys node-labeler + storage-autoscaler)
+# deploy_operators       = true
+# harbor_admin_password  = "your-harbor-admin-password"
