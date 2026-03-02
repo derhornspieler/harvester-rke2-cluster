@@ -3,6 +3,7 @@
 This guide covers common issues encountered during RKE2 cluster deployment on Harvester, diagnostic procedures, and remediation steps. It includes Mermaid decision trees for diagnosis and restoration procedures for failed deploys.
 
 ## Table of Contents
+
 1. [Deployment Failures](#1-deployment-failures)
 2. [Terraform State Issues](#2-terraform-state-issues)
 3. [Cluster Health Issues](#3-cluster-health-issues)
