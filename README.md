@@ -1,6 +1,6 @@
 # RKE2 Cluster on Harvester via Rancher
 
-[![CI](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml) [![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.5.0-blue?logo=terraform)](#) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](#license)
+[![CI](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml) [![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.5.0-blue?logo=terraform)](https://www.terraform.io/) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 Standalone Terraform project that provisions a production-ready RKE2 Kubernetes cluster on Harvester via the Rancher API. Airgap-first architecture with golden image deployment, Harbor proxy-cache registry, Cilium CNI, and autoscaling worker pools.
 
@@ -61,6 +61,7 @@ graph TB
 ## Prerequisites
 
 ### Infrastructure
+
 - **Rancher Management Cluster**: v2.6+, with Internet connectivity to Harvester API
 - **Harvester Hypervisor**: Registered in Rancher with proper network connectivity
 - **Golden Image**: Pre-built RKE2 VM image must exist on Harvester (e.g., `rke2-rocky9-golden-20260227`)
@@ -69,6 +70,7 @@ graph TB
 - **Networks**: Harvester VM networks configured (at minimum: one for nodes, optionally one for services/ingress)
 
 ### Tools
+
 Install locally on the machine running Terraform:
 - `terraform` >= 1.5.0
 - `kubectl`
@@ -76,6 +78,7 @@ Install locally on the machine running Terraform:
 - `crane` (for operator image push, optional if not deploying operators)
 
 ### Credentials
+
 - Rancher API token (generate at `/p/account` in Rancher UI)
 - Harvester kubeconfig (service account or user with VM creation permissions)
 - Harbor admin credentials (if deploying operators)
@@ -151,7 +154,6 @@ For deeper technical understanding of the system architecture and design decisio
   - Cluster autoscaler behavior (including scale-from-zero)
   - TLS/CA trust chain implementation
   - EFI firmware patching mechanism
-  - Why OIDC is deferred to post-deploy (Phase 6)
 
 - **[Operations Guide](./docs/operations.md)**: Runbooks and procedures for cluster operations
 
@@ -290,16 +292,16 @@ The cluster uses Harbor as a pull-through registry cache for 8 upstream registri
 graph LR
     Nodes["RKE2 Nodes<br/>containerd"]
 
-    Bootstrap["Bootstrap Registry<br/>Initial provisioning<br/>Phases 0-3"]
+    Bootstrap["Bootstrap Registry<br/>Initial provisioning"]
 
-    Harbor["Harbor Proxy-Cache<br/>After Phase 4<br/>Caches pulls"]
+    Harbor["Harbor Proxy-Cache<br/>Post-deployment<br/>Caches pulls"]
 
     Upstreams["Upstream Registries<br/>docker.io<br/>quay.io<br/>ghcr.io<br/>gcr.io<br/>registry.k8s.io<br/>docker.elastic.co<br/>registry.gitlab.com<br/>docker-registry3.mariadb.com"]
 
-    Nodes -->|Phase 0-3| Bootstrap
+    Nodes -->|Cluster startup| Bootstrap
     Bootstrap --> Upstreams
 
-    Nodes -->|Phase 4+| Harbor
+    Nodes -->|After cluster ready| Harbor
     Harbor --> Upstreams
 
     style Nodes fill:#00a878,color:#fff

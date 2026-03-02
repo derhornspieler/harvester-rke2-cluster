@@ -494,14 +494,14 @@ If a new CA certificate is generated:
 
 ### Traefik CA Refresh
 
-Traefik has an init container that combines system CA certs with the Vault root CA:
+Traefik has an init container that combines system CA certs with any additional CAs:
 
 ```yaml
 # From cluster.tf
 initContainers:
   - name: combine-ca
     image: alpine:3.21
-    command: ["sh", "-c", "cp /etc/ssl/certs/ca-certificates.crt /combined-ca/ca-certificates.crt 2>/dev/null || true; if [ -s /vault-ca/ca.crt ]; then cat /vault-ca/ca.crt >> /combined-ca/ca-certificates.crt; fi"]
+    command: ["sh", "-c", "cp /etc/ssl/certs/ca-certificates.crt /combined-ca/ca-certificates.crt 2>/dev/null || true"]
 ```
 
 When Traefik restarts, the new CA is automatically merged. To force a refresh:
@@ -515,7 +515,7 @@ kubectl delete pod -n kube-system -l app.kubernetes.io/name=traefik
 
 ## 5. Registry Mirror Management
 
-The cluster routes all container pulls through Harbor proxy-cache. Mirrors are configured in the RKE2 cluster's registries config and updated by `configure_rancher_registries()` (from the main platform deployment).
+The cluster routes all container pulls through Harbor proxy-cache. Mirrors are configured in the RKE2 cluster's registries config via Terraform.
 
 ### Adding an Upstream Mirror
 
@@ -584,7 +584,7 @@ Registry rewrite: bootstrap-registry:5000/docker.io/nginx:latest
 If not cached on bootstrap registry → fetch from upstream → cache locally
 ```
 
-Later, `configure_rancher_registries()` patches the cluster to route to **Harbor** instead:
+After cluster deployment, the registry mirrors are configured to use **Harbor**:
 
 ```
 Image pull: docker.io/nginx:latest
@@ -714,7 +714,7 @@ RKE2 exposes Prometheus metrics by default, but no monitoring stack is deployed 
 After cluster creation, deploy a monitoring stack:
 
 ```bash
-# Via platform deployment or standalone Helm:
+# Via standalone Helm:
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
@@ -989,7 +989,6 @@ terraform-tfvars                          # terraform.tfvars secret
 kubeconfig-harvester                      # Harvester kubeconfig
 kubeconfig-harvester-cloud-cred           # Cloud credential kubeconfig
 harvester-cloud-provider-kubeconfig       # Cloud provider kubeconfig
-vault-init                                # Vault init JSON (if deploying Vault)
 tfstate-default-rke2-cluster              # Terraform state (leased by backend)
 ```
 
@@ -1122,4 +1121,4 @@ This operations guide covers day-2 cluster management:
 - **Troubleshooting**: Destroy, cleanup, recovery from stuck state
 - **Tool Reference**: `terraform.sh` and `prepare.sh` commands and workflows
 
-For platform-level services, networking, and identity configuration, refer to the main platform deployment guides and architecture documentation.
+For additional cluster management tasks, refer to the [Architecture Guide](./architecture.md) and [Troubleshooting Guide](./troubleshooting.md).
