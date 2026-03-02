@@ -18,8 +18,5 @@ vault-init.json
 # Operator image tarballs (large, user-supplied)
 operators/images/*.tar.gz
 
-# Terraform-rendered manifests
-.rendered/
-
 # Claude Code agent memory (local, not shared)
 .claude/

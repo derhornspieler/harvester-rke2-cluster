@@ -1,0 +1,199 @@
+# =============================================================================
+# CI Pipeline - Lint, Validate, and Security Scan
+# =============================================================================
+# Runs on every PR and push to main. All jobs run in parallel where possible.
+#
+# Jobs:
+#   - gitleaks:        Secret scanning (blocks merge if secrets found)
+#   - terraform-fmt:   Terraform formatting check
+#   - terraform-validate: Terraform config validation (init -backend=false)
+#   - tflint:          Terraform linting with provider rules
+#   - shellcheck:      Shell script linting
+#   - yamllint:        YAML linting (excludes .tftpl templates)
+#   - markdownlint:    Markdown linting (allows HTML for mermaid)
+#   - checkov:         Terraform security/compliance scanning
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Secret Scanning
+  # ---------------------------------------------------------------------------
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Terraform Formatting
+  # ---------------------------------------------------------------------------
+  terraform-fmt:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff
+
+  # ---------------------------------------------------------------------------
+  # Terraform Validation
+  # ---------------------------------------------------------------------------
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Initialize (no backend)
+        run: terraform init -backend=false
+
+      - name: Validate configuration
+        run: terraform validate
+
+  # ---------------------------------------------------------------------------
+  # TFLint
+  # ---------------------------------------------------------------------------
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: "v0.54.0"
+
+      - name: Initialize TFLint
+        run: tflint --init
+
+      - name: Run TFLint
+        run: tflint --format compact
+
+  # ---------------------------------------------------------------------------
+  # ShellCheck
+  # ---------------------------------------------------------------------------
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find and lint shell scripts
+        run: |
+          # Find all .sh files, excluding .terraform/ and .git/
+          scripts=$(find . -name '*.sh' \
+            -not -path './.terraform/*' \
+            -not -path './.git/*' \
+            -not -path './.claude/*' \
+            | sort)
+
+          if [ -z "${scripts}" ]; then
+            echo "No shell scripts found."
+            exit 0
+          fi
+
+          echo "Linting the following scripts:"
+          echo "${scripts}"
+          echo ""
+
+          # shellcheck is pre-installed on ubuntu-latest
+          echo "${scripts}" | xargs shellcheck --severity=warning
+
+  # ---------------------------------------------------------------------------
+  # yamllint
+  # ---------------------------------------------------------------------------
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          # Lint all YAML files, excluding Terraform templates (.tftpl)
+          # which contain ${...} interpolations that break YAML parsing
+          yamllint -c .yamllint.yml \
+            $(find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
+              -not -name '*.tftpl' \
+              -not -path './.terraform/*' \
+              -not -path './.git/*' \
+              -not -path './.claude/*' \
+              | sort)
+
+  # ---------------------------------------------------------------------------
+  # markdownlint
+  # ---------------------------------------------------------------------------
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            **/*.md
+            !.terraform/**
+            !.claude/**
+
+  # ---------------------------------------------------------------------------
+  # Checkov - Terraform Security Scanning
+  # ---------------------------------------------------------------------------
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          soft_fail: true
+          output_format: cli
+          skip_check: >-
+            CKV_TF_1,
+            CKV_TF_2

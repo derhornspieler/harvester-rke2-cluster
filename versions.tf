@@ -11,8 +11,7 @@ terraform {
       source  = "harvester/harvester"
       version = "~> 0.6"
     }
-
-}
+  }
 
   backend "kubernetes" {
     secret_suffix = "rke2-cluster"

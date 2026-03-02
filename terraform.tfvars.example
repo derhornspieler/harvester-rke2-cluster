@@ -6,8 +6,9 @@
 # =============================================================================
 
 # Rancher Connection
-rancher_url   = "https://rancher.example.com"
-rancher_token = "token-xxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+rancher_url      = "https://rancher.example.com"
+rancher_token    = "token-xxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+rancher_insecure = true  # Set to false and provide private_ca_pem for production
 
 # Harvester
 harvester_kubeconfig_path       = "./kubeconfig-harvester.yaml"
