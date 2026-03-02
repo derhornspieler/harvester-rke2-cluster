@@ -11,6 +11,11 @@ terraform {
       source  = "harvester/harvester"
       version = "~> 0.6"
     }
+
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 
   backend "kubernetes" {

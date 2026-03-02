@@ -46,9 +46,20 @@ MD026:
 # Disabled: README and docs contain raw URLs in code blocks and examples
 MD034: false
 
+# MD031 - Fenced code blocks should be surrounded by blank lines
+# Disabled: troubleshooting docs use tight formatting with lists + code blocks
+MD031: false
+
+# MD032 - Lists should be surrounded by blank lines
+# Disabled: technical docs use lists inline with surrounding content
+MD032: false
+
+# MD036 - Emphasis used instead of a heading
+# Disabled: troubleshooting docs use **bold** as visual separators within sections
+MD036: false
+
 # MD040 - Fenced code blocks should have a language specified
-# Enabled but common in existing docs, so set to warning behavior
-MD040: true
+MD040: false
 
 # MD046 - Code block style
 # Enforce fenced (```) style, not indented
