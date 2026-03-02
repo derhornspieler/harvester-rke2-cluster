@@ -364,7 +364,7 @@ graph LR
     end
 
     subgraph BootstrapPhase["Phases 0–3<br/>(Bootstrap)"]
-        BootstrapRegistry["Bootstrap Registry<br/>(e.g., 172.16.3.200:5000)<br/>---<br/>May be local Docker<br/>or small registry pod<br/>Used only at cluster<br/>provisioning time"]
+        BootstrapRegistry["Bootstrap Registry<br/>(e.g., 10.0.0.100)<br/>---<br/>May be local Docker<br/>or small registry pod<br/>Used only at cluster<br/>provisioning time"]
     end
 
     subgraph HarborPhase["Phase 4+<br/>(Harbor Mirrors)"]
@@ -410,7 +410,7 @@ graph LR
    - Specifies mirrors and rewrite rules for each upstream registry
 
 2. **Bootstrap Phase (Phases 0–3)**
-   - Registry endpoint: `var.bootstrap_registry` (e.g., `172.16.3.200:5000`)
+   - Registry endpoint: `var.bootstrap_registry` (e.g., `10.0.0.100`)
    - Mirror config rewrites: e.g., `docker.io/library/alpine` → `bootstrap_registry/docker.io/library/alpine`
    - Small registry can pre-cache images needed for RKE2 startup (e.g., containerd, CNI plugins, system pods)
    - TLS trust: `bootstrap_registry_ca_pem` (defaults to `private_ca_pem` if not specified)

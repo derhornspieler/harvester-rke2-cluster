@@ -73,8 +73,8 @@ flowchart TD
 **Root Causes & Solutions**
 
 1. **Registry FQDN misconfigured (bare IP instead of FQDN)**
-   - Issue: containerd mirror config uses IP address (e.g., `172.16.3.200:5000`), but nginx virtual hosting requires Host header match
-   - Symptom: `curl https://172.16.3.200:5000/v2/` returns 404, but `curl -H "Host: harbor.example.com" https://172.16.3.200:5000/v2/` works
+   - Issue: containerd mirror config uses IP address (e.g., `10.0.0.100`), but nginx virtual hosting requires Host header match
+   - Symptom: `curl https://10.0.0.100/v2/` returns 404, but `curl -H "Host: harbor.example.com" https://10.0.0.100/v2/` works
    - Solution: Use FQDN in `terraform.tfvars`: `bootstrap_registry = "harbor.example.com"`
    - Ensure `/etc/hosts` or DNS maps `harbor.example.com` → IP address
 
