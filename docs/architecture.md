@@ -364,11 +364,11 @@ graph LR
     end
 
     subgraph BootstrapPhase["Phases 0–3<br/>(Bootstrap)"]
-        BootstrapRegistry["Bootstrap Registry<br/>(e.g., 172.16.3.200:5000)<br/>---<br/>May be local Docker<br/>or small registry pod<br/>Used only at cluster<br/>provisioning time"]
+        BootstrapRegistry["Bootstrap Registry<br/>(e.g., 10.0.0.100)<br/>---<br/>May be local Docker<br/>or small registry pod<br/>Used only at cluster<br/>provisioning time"]
     end
 
     subgraph HarborPhase["Phase 4+<br/>(Harbor Mirrors)"]
-        Harbor["Harbor Proxy-Cache<br/>(harbor.aegisgroup.ch)<br/>---<br/>Full Harbor deployment<br/>with 8 upstream mirrors<br/>configured"]
+        Harbor["Harbor Proxy-Cache<br/>(harbor.example.com)<br/>---<br/>Full Harbor deployment<br/>with 8 upstream mirrors<br/>configured"]
     end
 
     subgraph Upstreams["Upstream Registries"]
@@ -410,14 +410,14 @@ graph LR
    - Specifies mirrors and rewrite rules for each upstream registry
 
 2. **Bootstrap Phase (Phases 0–3)**
-   - Registry endpoint: `var.bootstrap_registry` (e.g., `172.16.3.200:5000`)
+   - Registry endpoint: `var.bootstrap_registry` (e.g., `10.0.0.100`)
    - Mirror config rewrites: e.g., `docker.io/library/alpine` → `bootstrap_registry/docker.io/library/alpine`
    - Small registry can pre-cache images needed for RKE2 startup (e.g., containerd, CNI plugins, system pods)
    - TLS trust: `bootstrap_registry_ca_pem` (defaults to `private_ca_pem` if not specified)
 
 3. **Harbor Proxy-Cache Phase (Phase 4+)**
    - `configure_rancher_registries()` patches `rke_config.registries` to point to Harbor
-   - Same mirror rewrites but now endpoint is `var.harbor_fqdn` (e.g., `harbor.aegisgroup.ch`)
+   - Same mirror rewrites but now endpoint is `var.harbor_fqdn` (e.g., `harbor.example.com`)
    - Harbor configured with 8 upstream projects (one per upstream registry)
    - Caching behavior: pull from upstream on first request, cache locally
    - Dramatically reduces bandwidth and upstream rate-limit pressure
@@ -643,7 +643,7 @@ The cluster uses a private certificate authority for internal service TLS and se
 ```mermaid
 graph TB
     subgraph CA["Private CA Infrastructure<br/>(Outside this repo)"]
-        RootCA["Root CA<br/>(30yr, offline)<br/>---<br/>aegisgroup.ch"]
+        RootCA["Root CA<br/>(30yr, offline)<br/>---<br/>example.com"]
 
         VaultIntermediate["Vault Intermediate CA<br/>(10yr)"]
         RKE2Intermediate["RKE2 Intermediate CA<br/>(5yr)<br/>--- (May be delegated)"]

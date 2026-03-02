@@ -95,8 +95,8 @@ write_files:
         name: ingress-pool
       spec:
         blocks:
-          - start: "172.16.3.202"
-            stop: "172.16.3.220"
+          - start: "10.0.0.202"
+            stop: "10.0.0.220"
 
   - path: /var/lib/rancher/rke2/server/manifests/cilium-l2-policy.yaml
     permissions: '0644'
