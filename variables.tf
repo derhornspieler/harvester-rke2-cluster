@@ -13,6 +13,12 @@ variable "rancher_token" {
   sensitive   = true
 }
 
+variable "rancher_insecure" {
+  description = "Skip TLS verification for Rancher API (set to true only for dev/self-signed certs)"
+  type        = bool
+  default     = false
+}
+
 # -----------------------------------------------------------------------------
 # Harvester Connection
 # -----------------------------------------------------------------------------

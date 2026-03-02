@@ -79,13 +79,13 @@ resource "null_resource" "operator_image_push" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/operators/push-images.sh"
+    command = "${path.module}/operators/push-images.sh"
     environment = {
-      HARBOR_FQDN    = var.harbor_fqdn
-      HARBOR_USER    = "admin"
+      HARBOR_FQDN     = var.harbor_fqdn
+      HARBOR_USER     = "admin"
       HARBOR_PASSWORD = var.harbor_admin_password
-      HARBOR_CA_PEM  = var.private_ca_pem
-      IMAGES_DIR     = "${path.module}/operators/images"
+      HARBOR_CA_PEM   = var.private_ca_pem
+      IMAGES_DIR      = "${path.module}/operators/images"
     }
   }
 
@@ -123,8 +123,8 @@ resource "null_resource" "deploy_node_labeler" {
 
       echo "Deploying node-labeler ${local.operators["node-labeler"].version}..."
 
-      # Apply static manifests (namespace, rbac, service, hpa)
-      for f in namespace.yaml rbac.yaml service.yaml hpa.yaml; do
+      # Apply static manifests (namespace, rbac, service, hpa, networkpolicy)
+      for f in namespace.yaml rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/node-labeler/$f"
       done
 
@@ -165,8 +165,8 @@ resource "null_resource" "deploy_storage_autoscaler" {
       # Apply CRD first — must exist before the controller starts
       kubectl apply -f "${path.module}/operators/manifests/storage-autoscaler/crd.yaml"
 
-      # Apply static manifests (namespace, rbac, service, hpa)
-      for f in namespace.yaml rbac.yaml service.yaml hpa.yaml; do
+      # Apply static manifests (namespace, rbac, service, hpa, networkpolicy)
+      for f in namespace.yaml rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/storage-autoscaler/$f"
       done
 

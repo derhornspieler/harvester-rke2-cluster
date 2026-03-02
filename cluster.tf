@@ -261,7 +261,7 @@ resource "rancher2_cluster_v2" "rke2" {
         }
         env = [{ name = "SSL_CERT_FILE", value = "/combined-ca/ca-certificates.crt" }]
         additionalArguments = [
-          "--api.insecure=true",
+          "--api.dashboard=false",
           "--entryPoints.web.transport.respondingTimeouts.readTimeout=1800s",
           "--entryPoints.web.transport.respondingTimeouts.writeTimeout=1800s",
           "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=1800s",
@@ -274,7 +274,7 @@ resource "rancher2_cluster_v2" "rke2" {
     # Global Machine Config
     # -----------------------------------------------------------------
     machine_global_config = yamlencode({
-      cni                  = var.cni
+      cni                   = var.cni
       "disable-kube-proxy"  = true
       "disable"             = ["rke2-ingress-nginx"]
       "ingress-controller"  = "traefik"
@@ -346,10 +346,7 @@ resource "rancher2_cluster_v2" "rke2" {
 
   # EFI patches must complete before Rancher starts provisioning VMs
   depends_on = [
-    null_resource.efi_controlplane,
-    null_resource.efi_general,
-    null_resource.efi_compute,
-    null_resource.efi_database,
+    null_resource.efi,
   ]
 
   # Ignore quantity drift from cluster autoscaler — Terraform manages min/max

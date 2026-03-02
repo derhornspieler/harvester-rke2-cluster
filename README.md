@@ -1,6 +1,6 @@
 # RKE2 Cluster on Harvester via Rancher
 
-[![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.5.0-blue?logo=terraform)](#) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](#license)
+[![CI](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml) [![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.5.0-blue?logo=terraform)](#) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](#license)
 
 Standalone Terraform project that provisions a production-ready RKE2 Kubernetes cluster on Harvester via the Rancher API. Airgap-first architecture with golden image deployment, Harbor proxy-cache registry, Cilium CNI, and autoscaling worker pools.
 

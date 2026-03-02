@@ -9,68 +9,35 @@
 #   - Field name is "enableEfi" (camelCase) — NOT "enableEFI"
 #   - Must use /apis/ path (native K8s), not /v1/ (Rancher convenience API
 #     doesn't support PATCH on these CRDs)
+#   - Token is passed via environment variable to avoid /proc/<pid>/cmdline exposure
 # -----------------------------------------------------------------------------
 
-resource "null_resource" "efi_controlplane" {
-  triggers = {
-    name = rancher2_machine_config_v2.controlplane.name
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      curl -sfk -o /dev/null -w 'EFI patch controlplane: HTTP %%{http_code}\n' -X PATCH \
-        -H "Authorization: Bearer ${var.rancher_token}" \
-        -H "Content-Type: application/merge-patch+json" \
-        "${var.rancher_url}/apis/rke-machine-config.cattle.io/v1/namespaces/fleet-default/harvesterconfigs/${rancher2_machine_config_v2.controlplane.name}" \
-        -d '{"enableEfi":true}'
-    EOT
+locals {
+  efi_targets = {
+    controlplane = rancher2_machine_config_v2.controlplane.name
+    general      = rancher2_machine_config_v2.general.name
+    compute      = rancher2_machine_config_v2.compute.name
+    database     = rancher2_machine_config_v2.database.name
   }
 }
 
-resource "null_resource" "efi_general" {
+resource "null_resource" "efi" {
+  for_each = local.efi_targets
+
   triggers = {
-    name = rancher2_machine_config_v2.general.name
+    name = each.value
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      curl -sfk -o /dev/null -w 'EFI patch general: HTTP %%{http_code}\n' -X PATCH \
-        -H "Authorization: Bearer ${var.rancher_token}" \
+      curl -sfk -o /dev/null -w 'EFI patch ${each.key}: HTTP %%{http_code}\n' -X PATCH \
+        -H "Authorization: Bearer $RANCHER_TOKEN" \
         -H "Content-Type: application/merge-patch+json" \
-        "${var.rancher_url}/apis/rke-machine-config.cattle.io/v1/namespaces/fleet-default/harvesterconfigs/${rancher2_machine_config_v2.general.name}" \
+        "${var.rancher_url}/apis/rke-machine-config.cattle.io/v1/namespaces/fleet-default/harvesterconfigs/${each.value}" \
         -d '{"enableEfi":true}'
     EOT
-  }
-}
-
-resource "null_resource" "efi_compute" {
-  triggers = {
-    name = rancher2_machine_config_v2.compute.name
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      curl -sfk -o /dev/null -w 'EFI patch compute: HTTP %%{http_code}\n' -X PATCH \
-        -H "Authorization: Bearer ${var.rancher_token}" \
-        -H "Content-Type: application/merge-patch+json" \
-        "${var.rancher_url}/apis/rke-machine-config.cattle.io/v1/namespaces/fleet-default/harvesterconfigs/${rancher2_machine_config_v2.compute.name}" \
-        -d '{"enableEfi":true}'
-    EOT
-  }
-}
-
-resource "null_resource" "efi_database" {
-  triggers = {
-    name = rancher2_machine_config_v2.database.name
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      curl -sfk -o /dev/null -w 'EFI patch database: HTTP %%{http_code}\n' -X PATCH \
-        -H "Authorization: Bearer ${var.rancher_token}" \
-        -H "Content-Type: application/merge-patch+json" \
-        "${var.rancher_url}/apis/rke-machine-config.cattle.io/v1/namespaces/fleet-default/harvesterconfigs/${rancher2_machine_config_v2.database.name}" \
-        -d '{"enableEfi":true}'
-    EOT
+    environment = {
+      RANCHER_TOKEN = var.rancher_token
+    }
   }
 }
