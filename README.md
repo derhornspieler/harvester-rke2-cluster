@@ -137,6 +137,26 @@ terraform output -raw kubeconfig_rke2 > ~/.kube/config-rke2
 kubectl --kubeconfig ~/.kube/config-rke2 get nodes -w
 ```
 
+## Documentation
+
+For deeper technical understanding of the system architecture and design decisions, refer to:
+
+- **[Architecture Guide](./docs/architecture.md)**: Comprehensive technical deep-dive covering:
+  - System architecture overview (Rancher, Harvester, RKE2 integration)
+  - Terraform resource dependency graph (all 10 resource types)
+  - Network architecture (dual NICs, policy routing, Cilium L2 announcement)
+  - Node pool design (CP, general, compute, database pools with autoscaling)
+  - Container registry flow (bootstrap registry → Harbor proxy-cache)
+  - Cloud provider integration (LoadBalancer, CSI, node lifecycle)
+  - Cluster autoscaler behavior (including scale-from-zero)
+  - TLS/CA trust chain implementation
+  - EFI firmware patching mechanism
+  - Why OIDC is deferred to post-deploy (Phase 6)
+
+- **[Operations Guide](./docs/operations.md)**: Runbooks and procedures for cluster operations
+
+- **[Troubleshooting Guide](./docs/troubleshooting.md)**: Common issues and diagnostic procedures
+
 ## Configuration Reference
 
 All configuration is managed via `terraform.tfvars`. See `terraform.tfvars.example` for commented examples.
