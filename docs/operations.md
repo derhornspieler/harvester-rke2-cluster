@@ -981,7 +981,7 @@ Destroy cluster and orphaned resources:
 2. Captures VM namespace and cluster name (needed for cleanup)
 3. Runs `terraform destroy`
 4. **If destroy fails with "Failed to save state"**: Recovers kubeconfig and state
-5. Cleans up orphaned Harvester resources (see [Dirty Destroy](#82-dirty-destroy-stuck-resources))
+5. Cleans up orphaned Harvester resources (see [Clean Destroy](#8-clean-destroy))
 6. Pushes recovered state to Harvester
 
 **Use when**:
