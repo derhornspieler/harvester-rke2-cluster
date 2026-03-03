@@ -129,7 +129,10 @@ push_local_images() {
 
   echo ""
   echo "Local images: ${pushed} pushed, ${skipped} skipped, ${failed} failed"
-  return "${failed}"
+  if [[ "${failed}" -gt 0 ]]; then
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------

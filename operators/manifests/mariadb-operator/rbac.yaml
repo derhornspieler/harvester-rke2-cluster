@@ -107,7 +107,11 @@ rules:
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["create", "list", "patch", "watch"]
-  # RBAC
+  # RBAC — upstream requirement: operator creates per-instance RBAC for
+  # MariaDB pods. clusterroles/clusterrolebindings create+patch is a known
+  # privilege escalation surface (IMP-1). Accepted risk: operator is non-root,
+  # read-only rootfs, NetworkPolicy-constrained. Consider OPA/Gatekeeper
+  # policy to restrict creatable ClusterRole names to mariadb-* prefix.
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
     verbs: ["create", "list", "patch", "watch"]
