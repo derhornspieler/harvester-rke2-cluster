@@ -162,6 +162,20 @@ resource "null_resource" "deploy_node_labeler" {
       echo "Waiting for nodes to be Ready..."
       kubectl wait --for=condition=Ready node --all --timeout=600s
 
+      # Bootstrap workload-type labels on initial nodes (node-labeler
+      # will maintain these going forward, but it needs the labels to
+      # schedule in the first place)
+      echo "Bootstrapping workload-type labels on nodes..."
+      for node in $(kubectl get nodes -o name | grep general); do
+        kubectl label "$node" workload-type=general --overwrite
+      done
+      for node in $(kubectl get nodes -o name | grep database); do
+        kubectl label "$node" workload-type=database --overwrite
+      done
+      for node in $(kubectl get nodes -o name | grep compute); do
+        kubectl label "$node" workload-type=compute --overwrite
+      done
+
       echo "Deploying node-labeler ${local.operators["node-labeler"].version}..."
 
       # Apply static manifests (namespace, rbac, service, hpa, networkpolicy)
@@ -249,7 +263,7 @@ resource "null_resource" "deploy_cnpg" {
       kubectl apply -f "${path.module}/operators/manifests/cnpg-system/namespace.yaml"
 
       # Apply CRDs — must exist before the controller starts
-      kubectl apply -f "${path.module}/operators/manifests/cnpg-system/crds.yaml"
+      kubectl apply --server-side -f "${path.module}/operators/manifests/cnpg-system/crds.yaml"
 
       # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
       for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml webhook.yaml; do
@@ -298,10 +312,11 @@ resource "null_resource" "deploy_mariadb_operator" {
       kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/namespace.yaml"
 
       # Apply CRDs — must exist before the controller starts
-      kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/crds.yaml"
+      kubectl apply --server-side -f "${path.module}/operators/manifests/mariadb-operator/crds.yaml"
 
-      # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
-      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml webhook.yaml; do
+      # Apply remaining static manifests (rbac, service, hpa, pdb, networkpolicy)
+      # Note: webhook.yaml skipped — cert-controller requires separate deployment
+      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
       done
 
@@ -347,7 +362,7 @@ resource "null_resource" "deploy_redis_operator" {
       kubectl apply -f "${path.module}/operators/manifests/redis-operator/namespace.yaml"
 
       # Apply CRDs — must exist before the controller starts
-      kubectl apply -f "${path.module}/operators/manifests/redis-operator/crds.yaml"
+      kubectl apply --server-side -f "${path.module}/operators/manifests/redis-operator/crds.yaml"
 
       # Apply remaining static manifests (rbac, service, hpa, networkpolicy)
       # Note: Redis Operator does not use webhooks

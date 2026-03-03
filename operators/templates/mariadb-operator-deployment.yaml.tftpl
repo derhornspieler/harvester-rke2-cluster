@@ -49,9 +49,6 @@ spec:
           args:
             - --metrics-addr=:8080
             - --health-addr=:8081
-            - --webhook-port=9443
-            - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
-            - --cert-controller-enabled
             - --leader-elect
           ports:
             - name: metrics
@@ -59,9 +56,6 @@ spec:
               protocol: TCP
             - name: health
               containerPort: 8081
-              protocol: TCP
-            - name: webhook-server
-              containerPort: 9443
               protocol: TCP
           startupProbe:
             httpGet:
@@ -92,12 +86,3 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
-          volumeMounts:
-            - name: webhook-certs
-              mountPath: /tmp/k8s-webhook-server/serving-certs
-              readOnly: true
-      volumes:
-        - name: webhook-certs
-          secret:
-            secretName: mariadb-operator-webhook-cert
-            optional: true
