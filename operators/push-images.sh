@@ -29,6 +29,7 @@ if ! command -v crane &>/dev/null; then
 fi
 
 # Build crane TLS flags
+# crane v0.21+ does not support --ca-cert; use SSL_CERT_FILE for custom CA trust
 CRANE_TLS_FLAGS=()
 TMPDIR_CLEANUP=""
 
@@ -37,7 +38,13 @@ if [[ -n "${HARBOR_CA_PEM:-}" ]]; then
   TMPDIR_CLEANUP="${CA_TMPDIR}"
   CA_FILE="${CA_TMPDIR}/harbor-ca.pem"
   echo "${HARBOR_CA_PEM}" > "${CA_FILE}"
-  CRANE_TLS_FLAGS+=(--ca-cert "${CA_FILE}")
+  # Append system CAs so crane trusts both Harbor CA and public roots
+  if [[ -f /etc/pki/tls/certs/ca-bundle.crt ]]; then
+    cat /etc/pki/tls/certs/ca-bundle.crt >> "${CA_FILE}"
+  elif [[ -f /etc/ssl/certs/ca-certificates.crt ]]; then
+    cat /etc/ssl/certs/ca-certificates.crt >> "${CA_FILE}"
+  fi
+  export SSL_CERT_FILE="${CA_FILE}"
 else
   echo "WARNING: No HARBOR_CA_PEM provided — using --insecure for TLS" >&2
   CRANE_TLS_FLAGS+=(--insecure)

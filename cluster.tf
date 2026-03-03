@@ -17,8 +17,9 @@ resource "rancher2_secret_v2" "dockerhub_auth" {
 }
 
 resource "rancher2_cluster_v2" "rke2" {
-  name               = var.cluster_name
-  kubernetes_version = var.kubernetes_version
+  name                         = var.cluster_name
+  kubernetes_version           = var.kubernetes_version
+  cloud_credential_secret_name = rancher2_cloud_credential.harvester.id
 
   # Cluster Autoscaler scale-down behavior
   annotations = {
