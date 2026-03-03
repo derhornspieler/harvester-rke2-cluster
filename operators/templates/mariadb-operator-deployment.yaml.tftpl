@@ -50,6 +50,15 @@ spec:
             - --metrics-addr=:8080
             - --health-addr=:8081
             - --leader-elect
+          env:
+            - name: MARIADB_OPERATOR_NAME
+              value: mariadb-operator
+            - name: MARIADB_OPERATOR_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: MARIADB_OPERATOR_SA_PATH
+              value: /var/run/secrets/kubernetes.io/serviceaccount/token
           ports:
             - name: metrics
               containerPort: 8080

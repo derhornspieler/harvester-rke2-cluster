@@ -42,10 +42,12 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Allow kube-apiserver access (RKE2 default service CIDR)
+    # Allow kube-apiserver access (service ClusterIP + direct)
     - to:
         - ipBlock:
             cidr: 10.43.0.1/32
       ports:
+        - port: 443
+          protocol: TCP
         - port: 6443
           protocol: TCP

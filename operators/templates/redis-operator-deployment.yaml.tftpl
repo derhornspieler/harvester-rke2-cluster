@@ -46,6 +46,8 @@ spec:
       containers:
         - name: manager
           image: quay.io/opstree/redis-operator:${version}
+          command:
+            - /manager
           args:
             - --leader-elect
             - --metrics-bind-address=:8080
