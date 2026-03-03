@@ -185,6 +185,12 @@ rancher_login() {
 create_api_token() {
   log_info "Creating permanent API token for Terraform..."
   local response
+  # NOTE: ttl=0 creates a non-expiring token intentionally for Terraform automation.
+  # This allows unattended Terraform operations (e.g., CI/CD, scheduled tasks) without
+  # requiring manual token rotation. The token is stored in terraform.tfvars with restricted
+  # file permissions (0600). Rotate periodically in production.
+  # TODO: Implement automated token rotation (e.g., annual, via CI job) and update this comment
+  #       with a reference to the rotation procedure.
   response=$(rancher_api POST "/v3/tokens" \
     "{\"type\":\"token\",\"description\":\"Terraform - ${CLUSTER_NAME}\",\"ttl\":0}")
 
