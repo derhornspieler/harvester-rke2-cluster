@@ -61,10 +61,11 @@ Steps performed (in order):
   1. Delete cluster from Rancher API (with finalizer cleanup)
   2. Delete orphaned CAPI machines in fleet-default
   3. Force-delete all VMs and VMIs in the VM namespace
-  4. Clean up Rancher resources (HarvesterConfigs, Fleet bundles, cloud creds)
-  5. Clean up Harvester resources (PVCs, DataVolumes)
-  6. Wipe Terraform state
-  7. Final verification
+  4. Clean up Rancher resources (HarvesterConfigs, Fleet bundles)
+  5. Clean up orphaned secrets and RBAC in fleet-default and Harvester
+  6. Clean up Harvester resources (PVCs, DataVolumes, namespace leftovers)
+  7. Wipe Terraform state
+  8. Final verification
 
 Prerequisites:
   - kubectl, terraform, jq, curl must be installed
@@ -145,7 +146,7 @@ rancher_api() {
 
 step_delete_cluster() {
   echo
-  log_info "=== Step 1/7: Delete cluster from Rancher API ==="
+  log_info "=== Step 1/8: Delete cluster from Rancher API ==="
 
   # Check if cluster exists
   local http_code
@@ -196,7 +197,7 @@ step_delete_cluster() {
 
 step_delete_capi_machines() {
   echo
-  log_info "=== Step 2/7: Delete orphaned CAPI machines ==="
+  log_info "=== Step 2/8: Delete orphaned CAPI machines ==="
 
   # Find HarvesterMachines stuck in deletion
   local hm_names
@@ -243,7 +244,7 @@ step_delete_capi_machines() {
 
 step_force_delete_vms() {
   echo
-  log_info "=== Step 3/7: Force-delete all VMs and VMIs ==="
+  log_info "=== Step 3/8: Force-delete all VMs and VMIs ==="
 
   # Delete all VMs in the namespace
   local vms
@@ -330,7 +331,7 @@ step_force_delete_vms() {
 
 step_cleanup_rancher_resources() {
   echo
-  log_info "=== Step 4/7: Clean up Rancher resources ==="
+  log_info "=== Step 4/8: Clean up Rancher resources ==="
 
   # --- HarvesterConfigs ---
   local harvester_configs
@@ -371,18 +372,15 @@ step_cleanup_rancher_resources() {
     log_ok "No Fleet bundles found"
   fi
 
-  # --- Cloud credentials ---
+  # --- Cloud credentials (preserved for reuse across destroy/recreate cycles) ---
   local cloud_creds
   cloud_creds=$(rancher_api GET "/v3/cloudCredentials" \
     | jq -r ".data[]? | select(.name | test(\"${CLUSTER_NAME}\")) | .id" 2>/dev/null || true)
 
   if [[ -n "$cloud_creds" ]]; then
-    log_info "Deleting cloud credentials matching '${CLUSTER_NAME}'..."
-    while IFS= read -r cred_id; do
-      [[ -z "$cred_id" ]] && continue
-      rancher_api DELETE "/v3/cloudCredentials/${cred_id}" > /dev/null 2>&1 || true
-      log_info "  Deleted cloud credential: ${cred_id}"
-    done <<< "$cloud_creds"
+    local cc_count
+    cc_count=$(echo "$cloud_creds" | wc -l | tr -d ' ')
+    log_ok "Preserving ${cc_count} cloud credential(s) (reusable across cycles)"
   else
     log_ok "No cloud credentials found"
   fi
@@ -405,9 +403,150 @@ step_cleanup_rancher_resources() {
   fi
 }
 
+step_cleanup_orphaned_secrets_and_rbac() {
+  echo
+  log_info "=== Step 5/8: Clean up orphaned secrets and RBAC ==="
+
+  # Use kubectl via Rancher API for fleet-default access (Harvester kubeconfig
+  # connects to 172.16.2.2 with limited RBAC and cannot see fleet-default)
+  local RKUBECTL="kubectl --server=${RANCHER_URL}/k8s/clusters/local --token=${RANCHER_TOKEN} --insecure-skip-tls-verify=true"
+
+  # --- machine-driver-secret: ${CLUSTER_NAME}-*-machine-driver-secret ---
+  local driver_secrets
+  driver_secrets=$($RKUBECTL get secrets -n fleet-default --no-headers -o name 2>/dev/null \
+    | grep "${CLUSTER_NAME}-.*-machine-driver-secret" || true)
+
+  local driver_count=0
+  if [[ -n "$driver_secrets" ]]; then
+    driver_count=$(echo "$driver_secrets" | wc -l | tr -d ' ')
+    log_info "Deleting ${driver_count} machine-driver-secret(s)..."
+    while IFS= read -r secret; do
+      [[ -z "$secret" ]] && continue
+      $RKUBECTL delete "$secret" -n fleet-default --wait=false 2>/dev/null || true
+    done <<< "$driver_secrets"
+  fi
+
+  # --- machine-state: ${CLUSTER_NAME}-*-machine-state ---
+  local state_secrets
+  state_secrets=$($RKUBECTL get secrets -n fleet-default --no-headers -o name 2>/dev/null \
+    | grep "${CLUSTER_NAME}-.*-machine-state" || true)
+
+  local state_count=0
+  if [[ -n "$state_secrets" ]]; then
+    state_count=$(echo "$state_secrets" | wc -l | tr -d ' ')
+    log_info "Deleting ${state_count} machine-state secret(s)..."
+    while IFS= read -r secret; do
+      [[ -z "$secret" ]] && continue
+      $RKUBECTL delete "$secret" -n fleet-default --wait=false 2>/dev/null || true
+    done <<< "$state_secrets"
+  fi
+
+  # --- machine-certs-*: only delete those with NO ownerReferences ---
+  local orphan_certs
+  orphan_certs=$($RKUBECTL get secrets -n fleet-default -o json 2>/dev/null \
+    | jq -r '.items[] | select(.metadata.name | startswith("machine-certs-")) | select((.metadata.ownerReferences // []) | length == 0) | .metadata.name' 2>/dev/null || true)
+
+  local cert_count=0
+  if [[ -n "$orphan_certs" ]]; then
+    cert_count=$(echo "$orphan_certs" | wc -l | tr -d ' ')
+    log_info "Deleting ${cert_count} orphaned machine-certs secret(s) (no ownerReferences)..."
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      $RKUBECTL delete secret "$name" -n fleet-default --wait=false 2>/dev/null || true
+    done <<< "$orphan_certs"
+  fi
+
+  # --- harvesterconfig* secrets in fleet-default ---
+  local hc_secrets
+  hc_secrets=$($RKUBECTL get secrets -n fleet-default --no-headers -o name 2>/dev/null \
+    | grep "harvesterconfig" || true)
+
+  local hc_count=0
+  if [[ -n "$hc_secrets" ]]; then
+    hc_count=$(echo "$hc_secrets" | wc -l | tr -d ' ')
+    log_info "Deleting ${hc_count} harvesterconfig secret(s)..."
+    while IFS= read -r secret; do
+      [[ -z "$secret" ]] && continue
+      $RKUBECTL delete "$secret" -n fleet-default --wait=false 2>/dev/null || true
+    done <<< "$hc_secrets"
+  fi
+
+  local secret_total=$((driver_count + state_count + cert_count + hc_count))
+  if [[ "$secret_total" -gt 0 ]]; then
+    log_ok "Cleaned ${secret_total} orphaned secret(s) from fleet-default"
+  else
+    log_ok "No orphaned secrets found in fleet-default"
+  fi
+
+  # --- Harvester RBAC cleanup ---
+  echo
+  log_info "Cleaning Harvester RBAC for cluster '${CLUSTER_NAME}'..."
+
+  # ClusterRoleBindings on Rancher management cluster matching cluster name
+  local rancher_crbs
+  rancher_crbs=$($RKUBECTL get clusterrolebindings --no-headers -o name 2>/dev/null \
+    | grep "${CLUSTER_NAME}" || true)
+
+  local rancher_crb_count=0
+  if [[ -n "$rancher_crbs" ]]; then
+    rancher_crb_count=$(echo "$rancher_crbs" | wc -l | tr -d ' ')
+    log_info "Deleting ${rancher_crb_count} ClusterRoleBinding(s) on Rancher..."
+    while IFS= read -r crb; do
+      [[ -z "$crb" ]] && continue
+      $RKUBECTL delete "$crb" --wait=false 2>/dev/null || true
+      log_info "  Deleted: ${crb}"
+    done <<< "$rancher_crbs"
+  fi
+
+  # ServiceAccount for the cluster in default namespace (on Harvester)
+  if $KUBECTL get serviceaccount "${CLUSTER_NAME}" -n default &>/dev/null; then
+    $KUBECTL delete serviceaccount "${CLUSTER_NAME}" -n default --wait=false 2>/dev/null || true
+    log_info "Deleted ServiceAccount '${CLUSTER_NAME}' in default namespace (Harvester)"
+  fi
+
+  # ClusterRoleBindings on Harvester matching cluster name
+  local hvst_crbs
+  hvst_crbs=$($KUBECTL get clusterrolebindings --no-headers -o name 2>/dev/null \
+    | grep "${CLUSTER_NAME}" || true)
+
+  local hvst_crb_count=0
+  if [[ -n "$hvst_crbs" ]]; then
+    hvst_crb_count=$(echo "$hvst_crbs" | wc -l | tr -d ' ')
+    log_info "Deleting ${hvst_crb_count} ClusterRoleBinding(s) on Harvester..."
+    while IFS= read -r crb; do
+      [[ -z "$crb" ]] && continue
+      $KUBECTL delete "$crb" --wait=false 2>/dev/null || true
+      log_info "  Deleted: ${crb}"
+    done <<< "$hvst_crbs"
+  fi
+
+  # RoleBinding in the VM namespace on Harvester
+  local ns_rbs
+  ns_rbs=$($KUBECTL get rolebindings -n "${VM_NAMESPACE}" --no-headers -o name 2>/dev/null \
+    | grep "${CLUSTER_NAME}" || true)
+
+  local ns_rb_count=0
+  if [[ -n "$ns_rbs" ]]; then
+    ns_rb_count=$(echo "$ns_rbs" | wc -l | tr -d ' ')
+    log_info "Deleting ${ns_rb_count} RoleBinding(s) in namespace '${VM_NAMESPACE}'..."
+    while IFS= read -r rb; do
+      [[ -z "$rb" ]] && continue
+      $KUBECTL delete "$rb" -n "${VM_NAMESPACE}" --wait=false 2>/dev/null || true
+      log_info "  Deleted: ${rb}"
+    done <<< "$ns_rbs"
+  fi
+
+  local rbac_total=$((rancher_crb_count + hvst_crb_count + ns_rb_count))
+  if [[ "$rbac_total" -gt 0 ]]; then
+    log_ok "Cleaned ${rbac_total} RBAC resource(s)"
+  else
+    log_ok "No orphaned RBAC resources found"
+  fi
+}
+
 step_cleanup_harvester_resources() {
   echo
-  log_info "=== Step 5/7: Clean up Harvester resources (PVCs, DataVolumes) ==="
+  log_info "=== Step 6/8: Clean up Harvester resources (PVCs, DataVolumes) ==="
 
   # --- DataVolumes ---
   local all_dvs
@@ -447,11 +586,58 @@ step_cleanup_harvester_resources() {
   else
     log_ok "No PVCs found"
   fi
+
+  # --- Namespace leftovers: secrets, configmaps, service accounts ---
+  # VirtualMachineImages are preserved (golden images are expensive to recreate)
+  log_info "Cleaning namespace leftovers in '${VM_NAMESPACE}' (preserving VirtualMachineImages)..."
+
+  # Secrets in the VM namespace (SA token secrets, etc.)
+  local ns_secrets
+  ns_secrets=$($KUBECTL get secrets -n "$VM_NAMESPACE" --no-headers -o name 2>/dev/null || true)
+
+  if [[ -n "$ns_secrets" ]]; then
+    local ns_secret_count
+    ns_secret_count=$(echo "$ns_secrets" | wc -l | tr -d ' ')
+    log_info "Deleting ${ns_secret_count} secret(s) in namespace '${VM_NAMESPACE}'..."
+    while IFS= read -r secret; do
+      [[ -z "$secret" ]] && continue
+      $KUBECTL delete "$secret" -n "$VM_NAMESPACE" --wait=false 2>/dev/null || true
+    done <<< "$ns_secrets"
+  fi
+
+  # ConfigMaps in the VM namespace
+  local ns_cms
+  ns_cms=$($KUBECTL get configmaps -n "$VM_NAMESPACE" --no-headers -o name 2>/dev/null || true)
+
+  if [[ -n "$ns_cms" ]]; then
+    local ns_cm_count
+    ns_cm_count=$(echo "$ns_cms" | wc -l | tr -d ' ')
+    log_info "Deleting ${ns_cm_count} ConfigMap(s) in namespace '${VM_NAMESPACE}'..."
+    while IFS= read -r cm; do
+      [[ -z "$cm" ]] && continue
+      $KUBECTL delete "$cm" -n "$VM_NAMESPACE" --wait=false 2>/dev/null || true
+    done <<< "$ns_cms"
+  fi
+
+  # Service accounts in the VM namespace (non-default)
+  local ns_sas
+  ns_sas=$($KUBECTL get serviceaccounts -n "$VM_NAMESPACE" --no-headers -o name 2>/dev/null \
+    | grep -v "^serviceaccount/default$" || true)
+
+  if [[ -n "$ns_sas" ]]; then
+    local ns_sa_count
+    ns_sa_count=$(echo "$ns_sas" | wc -l | tr -d ' ')
+    log_info "Deleting ${ns_sa_count} ServiceAccount(s) in namespace '${VM_NAMESPACE}'..."
+    while IFS= read -r sa; do
+      [[ -z "$sa" ]] && continue
+      $KUBECTL delete "$sa" -n "$VM_NAMESPACE" --wait=false 2>/dev/null || true
+    done <<< "$ns_sas"
+  fi
 }
 
 step_wipe_terraform_state() {
   echo
-  log_info "=== Step 6/7: Wipe Terraform state ==="
+  log_info "=== Step 7/8: Wipe Terraform state ==="
 
   cd "$SCRIPT_DIR"
 
@@ -494,7 +680,7 @@ step_wipe_terraform_state() {
 
 step_verify() {
   echo
-  log_info "=== Step 7/7: Final verification ==="
+  log_info "=== Step 8/8: Final verification ==="
   echo
 
   local all_passed=true
@@ -536,19 +722,54 @@ step_verify() {
     all_passed=false
   fi
 
-  # Check 4: 0 cloud credentials
+  # Check 4: Cloud credentials preserved (not deleted)
   local cc_count
   cc_count=$(rancher_api GET "/v3/cloudCredentials" \
     | jq -r "[.data[]? | select(.name | test(\"${CLUSTER_NAME}\"))] | length" 2>/dev/null || echo "0")
 
-  if [[ "$cc_count" -eq 0 ]]; then
-    CHECK_RESULTS["Cloud credentials cleaned"]="PASS (0 creds)"
+  if [[ "$cc_count" -gt 0 ]]; then
+    CHECK_RESULTS["Cloud credentials preserved"]="PASS (${cc_count} kept)"
   else
-    CHECK_RESULTS["Cloud credentials cleaned"]="FAIL (${cc_count} remaining)"
+    CHECK_RESULTS["Cloud credentials preserved"]="WARN (0 found — may need recreation)"
+  fi
+
+  # Check 5: Orphaned secrets cleaned from fleet-default
+  local RKUBECTL="kubectl --server=${RANCHER_URL}/k8s/clusters/local --token=${RANCHER_TOKEN} --insecure-skip-tls-verify=true"
+
+  local orphan_driver_count orphan_state_count orphan_cert_count
+  orphan_driver_count=$($RKUBECTL get secrets -n fleet-default --no-headers 2>/dev/null \
+    | grep -c "${CLUSTER_NAME}-.*-machine-driver-secret" || true)
+  orphan_state_count=$($RKUBECTL get secrets -n fleet-default --no-headers 2>/dev/null \
+    | grep -c "${CLUSTER_NAME}-.*-machine-state" || true)
+  orphan_cert_count=$($RKUBECTL get secrets -n fleet-default -o json 2>/dev/null \
+    | jq -r '[.items[] | select(.metadata.name | startswith("machine-certs-")) | select((.metadata.ownerReferences // []) | length == 0)] | length' 2>/dev/null || echo "0")
+
+  local orphan_total=$((orphan_driver_count + orphan_state_count + orphan_cert_count))
+  if [[ "$orphan_total" -eq 0 ]]; then
+    CHECK_RESULTS["Orphaned secrets cleaned"]="PASS (0 remaining)"
+  else
+    CHECK_RESULTS["Orphaned secrets cleaned"]="FAIL (${orphan_total} remaining)"
     all_passed=false
   fi
 
-  # Check 5: 0 PVCs
+  # Check 6: RBAC cleaned
+  local crb_remaining
+  crb_remaining=$($KUBECTL get clusterrolebindings --no-headers 2>/dev/null \
+    | grep -c "${CLUSTER_NAME}" || true)
+  local sa_remaining=0
+  if $KUBECTL get serviceaccount "${CLUSTER_NAME}" -n default &>/dev/null; then
+    sa_remaining=1
+  fi
+
+  local rbac_remaining=$((crb_remaining + sa_remaining))
+  if [[ "$rbac_remaining" -eq 0 ]]; then
+    CHECK_RESULTS["RBAC cleaned (Harvester)"]="PASS (0 remaining)"
+  else
+    CHECK_RESULTS["RBAC cleaned (Harvester)"]="FAIL (${rbac_remaining} remaining)"
+    all_passed=false
+  fi
+
+  # Check 8: 0 PVCs
   local pvc_count
   pvc_count=$($KUBECTL get pvc -n "$VM_NAMESPACE" \
     --no-headers 2>/dev/null | wc -l | tr -d ' ')
@@ -560,7 +781,7 @@ step_verify() {
     all_passed=false
   fi
 
-  # Check 6: Terraform state empty
+  # Check 9: Terraform state empty
   cd "$SCRIPT_DIR"
   local tf_count
   tf_count=$(terraform state list 2>/dev/null | wc -l | tr -d ' ')
@@ -645,8 +866,11 @@ main() {
     echo -e "  - Cluster:   ${BOLD}${CLUSTER_NAME}${NC} (from Rancher)"
     echo -e "  - VMs:       ALL in namespace ${BOLD}${VM_NAMESPACE}${NC}"
     echo -e "  - PVCs:      ALL in namespace ${BOLD}${VM_NAMESPACE}${NC}"
+    echo -e "  - Secrets:   Orphaned machine secrets in fleet-default"
+    echo -e "  - RBAC:      ClusterRoleBindings, ServiceAccounts for the cluster"
     echo -e "  - State:     ALL resources from Terraform state"
-    echo -e "  - Rancher:   HarvesterConfigs, Fleet bundles, cloud credentials"
+    echo -e "  - Rancher:   HarvesterConfigs, Fleet bundles"
+    echo -e "  - Preserved: Cloud credentials (reusable across cycles)"
     echo
     echo -e "${RED}This action is IRREVERSIBLE.${NC}"
     echo
@@ -664,6 +888,7 @@ main() {
   step_delete_capi_machines
   step_force_delete_vms
   step_cleanup_rancher_resources
+  step_cleanup_orphaned_secrets_and_rbac
   step_cleanup_harvester_resources
   step_wipe_terraform_state
   step_verify
