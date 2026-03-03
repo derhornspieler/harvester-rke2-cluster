@@ -47,8 +47,9 @@ spec:
         - name: manager
           image: quay.io/opstree/redis-operator:${version}
           command:
-            - /manager
+            - /operator
           args:
+            - manager
             - --leader-elect
             - --metrics-bind-address=:8080
             - --health-probe-bind-address=:8081

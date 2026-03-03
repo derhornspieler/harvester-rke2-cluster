@@ -59,6 +59,22 @@ spec:
                   fieldPath: metadata.namespace
             - name: MARIADB_OPERATOR_SA_PATH
               value: /var/run/secrets/kubernetes.io/serviceaccount/token
+            - name: MARIADB_OPERATOR_IMAGE
+              value: ghcr.io/mariadb-operator/mariadb-operator:${version}
+            - name: RELATED_IMAGE_MARIADB
+              value: docker.io/library/mariadb:11.4.5
+            - name: RELATED_IMAGE_MARIADB_NAME
+              value: docker.io/library/mariadb
+            - name: RELATED_IMAGE_MAXSCALE
+              value: docker.io/mariadb/maxscale:23.08.5
+            - name: RELATED_IMAGE_EXPORTER
+              value: docker.io/prom/mysqld-exporter:v0.15.1
+            - name: RELATED_IMAGE_EXPORTER_MAXSCALE
+              value: docker.io/mariadb/maxscale-prometheus-exporter-ubi:v0.0.1
+            - name: MARIADB_GALERA_LIB_PATH
+              value: /usr/lib64/galera/libgalera_smm.so
+            - name: MARIADB_DEFAULT_VERSION
+              value: "11.4"
           ports:
             - name: metrics
               containerPort: 8080
