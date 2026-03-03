@@ -1,15 +1,21 @@
 # -----------------------------------------------------------------------------
-# Operator Deployment — node-labeler + storage-autoscaler
+# Operator Deployment — node-labeler, storage-autoscaler, DB operators
 # -----------------------------------------------------------------------------
-# Pushes pre-built OCI images to Harbor, then deploys operators via kubectl.
+# Pushes pre-built OCI images to Harbor, copies upstream images from
+# Harbor proxy-cache to library, then deploys operators via kubectl.
 # Gated by var.deploy_operators (default: true).
+# DB operators individually gated by var.deploy_cnpg, var.deploy_mariadb_operator,
+# var.deploy_redis_operator (each requires deploy_operators = true).
 #
 # Dependency chain:
 #   rancher2_cluster_v2.rke2
 #     -> null_resource.operator_kubeconfig
 #     -> null_resource.operator_image_push
-#       -> null_resource.deploy_node_labeler    (parallel)
-#       -> null_resource.deploy_storage_autoscaler (parallel)
+#       -> null_resource.deploy_node_labeler          (parallel)
+#       -> null_resource.deploy_storage_autoscaler    (parallel)
+#       -> null_resource.deploy_cnpg                  (parallel)
+#       -> null_resource.deploy_mariadb_operator      (parallel)
+#       -> null_resource.deploy_redis_operator        (parallel)
 # -----------------------------------------------------------------------------
 
 locals {
@@ -19,6 +25,21 @@ locals {
     }
     storage-autoscaler = {
       version = "v0.2.0"
+    }
+  }
+
+  db_operators = {
+    cnpg = {
+      version   = "1.28.1"
+      namespace = "cnpg-system"
+    }
+    mariadb-operator = {
+      version   = "25.10.4"
+      namespace = "mariadb-operator"
+    }
+    redis-operator = {
+      version   = "v0.23.0"
+      namespace = "redis-operator"
     }
   }
 
@@ -61,12 +82,33 @@ resource "null_resource" "operator_kubeconfig" {
         -e 's|$${version}|${local.operators["storage-autoscaler"].version}|g' \
         "${path.module}/operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
+
+      # Render CNPG deployment template
+      sed \
+        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
+        -e 's|$${version}|${local.db_operators["cnpg"].version}|g' \
+        "${path.module}/operators/templates/cnpg-deployment.yaml.tftpl" \
+        > "${local.rendered_dir}/cnpg-deployment.yaml"
+
+      # Render MariaDB Operator deployment template
+      sed \
+        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
+        -e 's|$${version}|${local.db_operators["mariadb-operator"].version}|g' \
+        "${path.module}/operators/templates/mariadb-operator-deployment.yaml.tftpl" \
+        > "${local.rendered_dir}/mariadb-operator-deployment.yaml"
+
+      # Render Redis Operator deployment template
+      sed \
+        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
+        -e 's|$${version}|${local.db_operators["redis-operator"].version}|g' \
+        "${path.module}/operators/templates/redis-operator-deployment.yaml.tftpl" \
+        > "${local.rendered_dir}/redis-operator-deployment.yaml"
     SCRIPT
   }
 }
 
 # -----------------------------------------------------------------------------
-# Image Push — crane pushes pre-built OCI tarballs to Harbor
+# Image Push — crane pushes local tarballs + copies upstream images to Harbor
 # -----------------------------------------------------------------------------
 
 resource "null_resource" "operator_image_push" {
@@ -76,6 +118,9 @@ resource "null_resource" "operator_image_push" {
     cluster_id                 = rancher2_cluster_v2.rke2.id
     node_labeler_version       = local.operators["node-labeler"].version
     storage_autoscaler_version = local.operators["storage-autoscaler"].version
+    cnpg_version               = local.db_operators["cnpg"].version
+    mariadb_operator_version   = local.db_operators["mariadb-operator"].version
+    redis_operator_version     = local.db_operators["redis-operator"].version
   }
 
   provisioner "local-exec" {
@@ -86,6 +131,7 @@ resource "null_resource" "operator_image_push" {
       HARBOR_PASSWORD = var.harbor_admin_password
       HARBOR_CA_PEM   = var.private_ca_pem
       IMAGES_DIR      = "${path.module}/operators/images"
+      UPSTREAM_IMAGES = "${path.module}/operators/upstream-images.txt"
     }
   }
 
@@ -174,6 +220,154 @@ resource "null_resource" "deploy_storage_autoscaler" {
       kubectl apply -f "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
 
       echo "storage-autoscaler deployed successfully."
+    SCRIPT
+  }
+
+  depends_on = [
+    null_resource.operator_image_push,
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# Deploy: CloudNativePG (CNPG)
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "deploy_cnpg" {
+  count = var.deploy_operators && var.deploy_cnpg ? 1 : 0
+
+  triggers = {
+    cluster_id = rancher2_cluster_v2.rke2.id
+    version    = local.db_operators["cnpg"].version
+  }
+
+  provisioner "local-exec" {
+    command = <<-SCRIPT
+      set -euo pipefail
+      export KUBECONFIG="${local.operator_kubeconfig}"
+
+      echo "Waiting for nodes to be Ready..."
+      kubectl wait --for=condition=Ready node --all --timeout=600s
+
+      echo "Deploying CloudNativePG ${local.db_operators["cnpg"].version}..."
+
+      # Apply namespace first
+      kubectl apply -f "${path.module}/operators/manifests/cnpg-system/namespace.yaml"
+
+      # Apply CRDs — must exist before the controller starts
+      kubectl apply -f "${path.module}/operators/manifests/cnpg-system/crds.yaml"
+
+      # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
+      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml webhook.yaml; do
+        kubectl apply -f "${path.module}/operators/manifests/cnpg-system/$f"
+      done
+
+      # Apply rendered deployment (with correct Harbor image reference)
+      kubectl apply -f "${local.rendered_dir}/cnpg-deployment.yaml"
+
+      # Wait for rollout to complete
+      kubectl rollout status deployment/cnpg-controller-manager \
+        -n cnpg-system --timeout=300s
+
+      echo "CloudNativePG deployed successfully."
+    SCRIPT
+  }
+
+  depends_on = [
+    null_resource.operator_image_push,
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# Deploy: MariaDB Operator
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "deploy_mariadb_operator" {
+  count = var.deploy_operators && var.deploy_mariadb_operator ? 1 : 0
+
+  triggers = {
+    cluster_id = rancher2_cluster_v2.rke2.id
+    version    = local.db_operators["mariadb-operator"].version
+  }
+
+  provisioner "local-exec" {
+    command = <<-SCRIPT
+      set -euo pipefail
+      export KUBECONFIG="${local.operator_kubeconfig}"
+
+      echo "Waiting for nodes to be Ready..."
+      kubectl wait --for=condition=Ready node --all --timeout=600s
+
+      echo "Deploying MariaDB Operator ${local.db_operators["mariadb-operator"].version}..."
+
+      # Apply namespace first
+      kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/namespace.yaml"
+
+      # Apply CRDs — must exist before the controller starts
+      kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/crds.yaml"
+
+      # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
+      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml webhook.yaml; do
+        kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
+      done
+
+      # Apply rendered deployment (with correct Harbor image reference)
+      kubectl apply -f "${local.rendered_dir}/mariadb-operator-deployment.yaml"
+
+      # Wait for rollout to complete
+      kubectl rollout status deployment/mariadb-operator \
+        -n mariadb-operator --timeout=300s
+
+      echo "MariaDB Operator deployed successfully."
+    SCRIPT
+  }
+
+  depends_on = [
+    null_resource.operator_image_push,
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# Deploy: Redis Operator (OpsTree)
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "deploy_redis_operator" {
+  count = var.deploy_operators && var.deploy_redis_operator ? 1 : 0
+
+  triggers = {
+    cluster_id = rancher2_cluster_v2.rke2.id
+    version    = local.db_operators["redis-operator"].version
+  }
+
+  provisioner "local-exec" {
+    command = <<-SCRIPT
+      set -euo pipefail
+      export KUBECONFIG="${local.operator_kubeconfig}"
+
+      echo "Waiting for nodes to be Ready..."
+      kubectl wait --for=condition=Ready node --all --timeout=600s
+
+      echo "Deploying Redis Operator ${local.db_operators["redis-operator"].version}..."
+
+      # Apply namespace first
+      kubectl apply -f "${path.module}/operators/manifests/redis-operator/namespace.yaml"
+
+      # Apply CRDs — must exist before the controller starts
+      kubectl apply -f "${path.module}/operators/manifests/redis-operator/crds.yaml"
+
+      # Apply remaining static manifests (rbac, service, hpa, networkpolicy)
+      # Note: Redis Operator does not use webhooks
+      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
+        kubectl apply -f "${path.module}/operators/manifests/redis-operator/$f"
+      done
+
+      # Apply rendered deployment (with correct Harbor image reference)
+      kubectl apply -f "${local.rendered_dir}/redis-operator-deployment.yaml"
+
+      # Wait for rollout to complete
+      kubectl rollout status deployment/redis-operator \
+        -n redis-operator --timeout=300s
+
+      echo "Redis Operator deployed successfully."
     SCRIPT
   }
 
