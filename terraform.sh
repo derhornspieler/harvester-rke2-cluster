@@ -31,6 +31,29 @@ _get_tfvar_value() {
   awk -F'"' "/^${1}[[:space:]]/ {print \$2}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
 }
 
+# Extract a heredoc tfvars value (multiline, between <<-EOT and EOT).
+# Usage: _get_tfvar_heredoc private_ca_pem
+# Returns the content between the start marker and EOT.
+_get_tfvar_heredoc() {
+  local key="$1"
+  local in_block=0
+  while IFS= read -r line; do
+    if [[ "$in_block" -eq 0 && "$line" =~ ^${key}[[:space:]]*=.*EOT$ ]]; then
+      # Found start of multi-line heredoc
+      in_block=1
+      continue
+    elif [[ "$in_block" -eq 1 ]]; then
+      if [[ "$line" == "EOT" ]]; then
+        return 0
+      fi
+      echo "$line"
+    fi
+  done < "${SCRIPT_DIR}/terraform.tfvars"
+  return 0
+}
+
+
+
 check_prerequisites() {
   local missing=()
   for cmd in kubectl terraform jq; do
@@ -523,7 +546,46 @@ post_destroy_cleanup() {
     echo
     log_info "Cleaning orphaned secrets in fleet-default (via Rancher API)..."
 
-    local RKUBECTL="kubectl --server=${rancher_url}/k8s/clusters/local --token=${rancher_token} --insecure-skip-tls-verify=true"
+    local rancher_kubeconfig
+    rancher_kubeconfig="$(mktemp)"
+
+    # Try to get private CA PEM; if available, use it for TLS verification
+    local private_ca_pem ca_data cert_auth_line
+    private_ca_pem=$(_get_tfvar_heredoc private_ca_pem)
+
+    if [[ -n "$private_ca_pem" ]]; then
+      # Base64 encode the CA PEM for kubeconfig
+      ca_data=$(echo "$private_ca_pem" | base64 -w0)
+      cert_auth_line="    certificate-authority-data: ${ca_data}"
+    else
+      # Fall back to insecure when CA not available
+      cert_auth_line="    insecure-skip-tls-verify: true"
+    fi
+
+    cat > "$rancher_kubeconfig" <<KUBECONFIG
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: ${rancher_url}/k8s/clusters/local
+${cert_auth_line}
+  name: rancher-local
+contexts:
+- context:
+    cluster: rancher-local
+    user: rancher-token
+  name: rancher-local
+current-context: rancher-local
+users:
+- name: rancher-token
+  user:
+    token: ${rancher_token}
+KUBECONFIG
+    chmod 600 "$rancher_kubeconfig"
+    # Clean up temp kubeconfig on function exit
+    trap 'rm -f "$rancher_kubeconfig"' RETURN
+
+    local RKUBECTL="kubectl --kubeconfig=${rancher_kubeconfig}"
 
     # machine-driver-secret: ${cluster_name}-*-machine-driver-secret
     local driver_secrets

@@ -132,6 +132,47 @@ load_config() {
 }
 
 # Rancher API helper: rancher_api METHOD PATH [DATA]
+# Create a temporary kubeconfig for Rancher API access with optional CA verification
+_create_rancher_kubeconfig() {
+  local tmpfile
+  tmpfile=$(mktemp)
+
+  # Try to get private CA PEM; if available, use it for TLS verification
+  local private_ca_pem ca_data cert_auth_line
+  private_ca_pem=$(_get_tfvar_heredoc private_ca_pem)
+
+  if [[ -n "$private_ca_pem" ]]; then
+    # Base64 encode the CA PEM for kubeconfig
+    ca_data=$(echo "$private_ca_pem" | base64 -w0)
+    cert_auth_line="    certificate-authority-data: ${ca_data}"
+  else
+    # Fall back to insecure when CA not available
+    cert_auth_line="    insecure-skip-tls-verify: true"
+  fi
+
+  cat > "$tmpfile" <<KUBECONFIG
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: ${RANCHER_URL}/k8s/clusters/local
+${cert_auth_line}
+  name: rancher-local
+contexts:
+- context:
+    cluster: rancher-local
+    user: rancher-token
+  name: rancher-local
+current-context: rancher-local
+users:
+- name: rancher-token
+  user:
+    token: ${RANCHER_TOKEN}
+KUBECONFIG
+  chmod 600 "$tmpfile"
+  echo "$tmpfile"
+}
+
 rancher_api() {
   local method="$1" path="$2" data="${3:-}"
   local url="${RANCHER_URL}${path}"
@@ -409,7 +450,10 @@ step_cleanup_orphaned_secrets_and_rbac() {
 
   # Use kubectl via Rancher API for fleet-default access (Harvester kubeconfig
   # connects to 172.16.2.2 with limited RBAC and cannot see fleet-default)
-  local RKUBECTL="kubectl --server=${RANCHER_URL}/k8s/clusters/local --token=${RANCHER_TOKEN} --insecure-skip-tls-verify=true"
+  local RANCHER_KUBECONFIG
+  RANCHER_KUBECONFIG=$(_create_rancher_kubeconfig)
+  trap 'rm -f "$RANCHER_KUBECONFIG"' RETURN
+  local RKUBECTL="kubectl --kubeconfig=${RANCHER_KUBECONFIG}"
 
   # --- machine-driver-secret: ${CLUSTER_NAME}-*-machine-driver-secret ---
   local driver_secrets
@@ -734,7 +778,10 @@ step_verify() {
   fi
 
   # Check 5: Orphaned secrets cleaned from fleet-default
-  local RKUBECTL="kubectl --server=${RANCHER_URL}/k8s/clusters/local --token=${RANCHER_TOKEN} --insecure-skip-tls-verify=true"
+  local RANCHER_KUBECONFIG
+  RANCHER_KUBECONFIG=$(_create_rancher_kubeconfig)
+  trap 'rm -f "$RANCHER_KUBECONFIG"' RETURN
+  local RKUBECTL="kubectl --kubeconfig=${RANCHER_KUBECONFIG}"
 
   local orphan_driver_count orphan_state_count orphan_cert_count
   orphan_driver_count=$($RKUBECTL get secrets -n fleet-default --no-headers 2>/dev/null \
