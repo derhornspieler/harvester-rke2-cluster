@@ -45,7 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: ${harbor_fqdn}/library/cloudnative-pg:${version}
+          image: ghcr.io/cloudnative-pg/cloudnative-pg:${version}
           args:
             - controller
             - --leader-elect
@@ -53,7 +53,7 @@ spec:
             - --max-concurrent-reconciles=10
           env:
             - name: OPERATOR_IMAGE_NAME
-              value: ${harbor_fqdn}/library/cloudnative-pg:${version}
+              value: ghcr.io/cloudnative-pg/cloudnative-pg:${version}
             - name: OPERATOR_NAMESPACE
               valueFrom:
                 fieldRef:

@@ -45,7 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: ${harbor_fqdn}/library/mariadb-operator:${version}
+          image: ghcr.io/mariadb-operator/mariadb-operator:${version}
           args:
             - --metrics-addr=:8080
             - --health-addr=:8081

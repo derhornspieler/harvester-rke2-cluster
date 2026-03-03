@@ -8,19 +8,6 @@ spec:
   policyTypes:
     - Ingress
     - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: cnpg-manager
-  namespace: cnpg-system
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: cnpg
-  policyTypes:
-    - Ingress
-    - Egress
   ingress:
     # Allow metrics scraping from monitoring namespace
     - from:
@@ -30,14 +17,8 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    # Allow webhook calls from kube-apiserver (any source)
+    # Allow webhook calls from any namespace (kube-apiserver)
     - from: []
-      ports:
-        - port: 9443
-          protocol: TCP
-    # Allow health checks from within namespace
-    - from:
-        - podSelector: {}
       ports:
         - port: 9443
           protocol: TCP

@@ -1,21 +1,23 @@
 # -----------------------------------------------------------------------------
 # Operator Deployment — node-labeler, storage-autoscaler, DB operators
 # -----------------------------------------------------------------------------
-# Pushes pre-built OCI images to Harbor, copies upstream images from
-# Harbor proxy-cache to library, then deploys operators via kubectl.
-# Gated by var.deploy_operators (default: true).
+# Pushes pre-built custom operator images to Harbor, then deploys all
+# operators via kubectl. Gated by var.deploy_operators (default: true).
 # DB operators individually gated by var.deploy_cnpg, var.deploy_mariadb_operator,
 # var.deploy_redis_operator (each requires deploy_operators = true).
+#
+# DB operators use upstream image references (ghcr.io, quay.io) directly;
+# RKE2 registries.yaml handles transparent rewrite to Harbor proxy-cache.
 #
 # Dependency chain:
 #   rancher2_cluster_v2.rke2
 #     -> null_resource.operator_kubeconfig
-#     -> null_resource.operator_image_push
-#       -> null_resource.deploy_node_labeler          (parallel)
-#       -> null_resource.deploy_storage_autoscaler    (parallel)
-#       -> null_resource.deploy_cnpg                  (parallel)
-#       -> null_resource.deploy_mariadb_operator      (parallel)
-#       -> null_resource.deploy_redis_operator        (parallel)
+#       -> null_resource.operator_image_push
+#         -> null_resource.deploy_node_labeler          (parallel)
+#         -> null_resource.deploy_storage_autoscaler    (parallel)
+#       -> null_resource.deploy_cnpg                    (parallel)
+#       -> null_resource.deploy_mariadb_operator        (parallel)
+#       -> null_resource.deploy_redis_operator          (parallel)
 # -----------------------------------------------------------------------------
 
 locals {
@@ -83,23 +85,20 @@ resource "null_resource" "operator_kubeconfig" {
         "${path.module}/operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
 
-      # Render CNPG deployment template
+      # Render CNPG deployment template (upstream image, only version substitution)
       sed \
-        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
         -e 's|$${version}|${local.db_operators["cnpg"].version}|g' \
         "${path.module}/operators/templates/cnpg-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/cnpg-deployment.yaml"
 
-      # Render MariaDB Operator deployment template
+      # Render MariaDB Operator deployment template (upstream image, only version substitution)
       sed \
-        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
         -e 's|$${version}|${local.db_operators["mariadb-operator"].version}|g' \
         "${path.module}/operators/templates/mariadb-operator-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/mariadb-operator-deployment.yaml"
 
-      # Render Redis Operator deployment template
+      # Render Redis Operator deployment template (upstream image, only version substitution)
       sed \
-        -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
         -e 's|$${version}|${local.db_operators["redis-operator"].version}|g' \
         "${path.module}/operators/templates/redis-operator-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/redis-operator-deployment.yaml"
@@ -108,7 +107,7 @@ resource "null_resource" "operator_kubeconfig" {
 }
 
 # -----------------------------------------------------------------------------
-# Image Push — crane pushes local tarballs + copies upstream images to Harbor
+# Image Push — crane pushes custom operator tarballs to Harbor
 # -----------------------------------------------------------------------------
 
 resource "null_resource" "operator_image_push" {
@@ -118,9 +117,6 @@ resource "null_resource" "operator_image_push" {
     cluster_id                 = rancher2_cluster_v2.rke2.id
     node_labeler_version       = local.operators["node-labeler"].version
     storage_autoscaler_version = local.operators["storage-autoscaler"].version
-    cnpg_version               = local.db_operators["cnpg"].version
-    mariadb_operator_version   = local.db_operators["mariadb-operator"].version
-    redis_operator_version     = local.db_operators["redis-operator"].version
   }
 
   provisioner "local-exec" {
@@ -131,7 +127,6 @@ resource "null_resource" "operator_image_push" {
       HARBOR_PASSWORD = var.harbor_admin_password
       HARBOR_CA_PEM   = var.private_ca_pem
       IMAGES_DIR      = "${path.module}/operators/images"
-      UPSTREAM_IMAGES = "${path.module}/operators/upstream-images.txt"
     }
   }
 
@@ -273,7 +268,7 @@ resource "null_resource" "deploy_cnpg" {
   }
 
   depends_on = [
-    null_resource.operator_image_push,
+    null_resource.operator_kubeconfig,
   ]
 }
 
@@ -322,7 +317,7 @@ resource "null_resource" "deploy_mariadb_operator" {
   }
 
   depends_on = [
-    null_resource.operator_image_push,
+    null_resource.operator_kubeconfig,
   ]
 }
 
@@ -372,6 +367,6 @@ resource "null_resource" "deploy_redis_operator" {
   }
 
   depends_on = [
-    null_resource.operator_image_push,
+    null_resource.operator_kubeconfig,
   ]
 }

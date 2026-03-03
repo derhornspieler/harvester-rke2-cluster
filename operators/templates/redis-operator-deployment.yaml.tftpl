@@ -45,7 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: ${harbor_fqdn}/library/redis-operator:${version}
+          image: quay.io/opstree/redis-operator:${version}
           args:
             - --leader-elect
             - --metrics-bind-address=:8080

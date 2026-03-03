@@ -1,6 +1,0 @@
-# Upstream operator images to copy from Harbor proxy-cache to library project
-# Format: <library-name>:<tag> <proxy-cache-project>/<image-path>:<tag>
-# The proxy-cache-project name matches the upstream registry name in Harbor
-cloudnative-pg:1.28.1 ghcr.io/cloudnative-pg/cloudnative-pg:1.28.1
-mariadb-operator:25.10.4 ghcr.io/mariadb-operator/mariadb-operator:25.10.4
-redis-operator:v0.23.0 quay.io/opstree/redis-operator:v0.23.0

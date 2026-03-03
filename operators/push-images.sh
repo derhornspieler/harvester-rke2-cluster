@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# push-images.sh — Push operator images to Harbor via crane
+# push-images.sh — Push custom operator images to Harbor via crane
 #
-# Handles two categories:
-#   1. Local OCI tarballs from IMAGES_DIR (node-labeler, storage-autoscaler)
-#   2. Upstream images copied from Harbor proxy-cache to the library project
+# Pushes pre-built OCI tarballs from IMAGES_DIR to Harbor's library project.
+# Used for custom operators (node-labeler, storage-autoscaler) that are built
+# locally and shipped as tar.gz archives. DB operators (CNPG, MariaDB, Redis)
+# use upstream image references directly and are rewritten via registries.yaml.
 #
 # Required environment variables:
 #   HARBOR_FQDN      Harbor registry hostname (e.g., harbor.example.com)
@@ -13,14 +14,11 @@
 # Optional environment variables:
 #   HARBOR_USER       Harbor username (default: admin)
 #   HARBOR_CA_PEM     PEM-encoded CA certificate for TLS trust
-#   UPSTREAM_IMAGES   Path to upstream-images.txt manifest (default: script dir)
 #
 # Naming convention for tarballs:
 #   <name>-<version>-<arch>.tar.gz
 #   e.g., node-labeler-v0.2.0-amd64.tar.gz -> harbor.example.com/library/node-labeler:v0.2.0
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 : "${HARBOR_FQDN:?HARBOR_FQDN is required}"
 : "${HARBOR_PASSWORD:?HARBOR_PASSWORD is required}"
@@ -28,7 +26,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 HARBOR_USER="${HARBOR_USER:-admin}"
 HARBOR_PROJECT="library"
-UPSTREAM_IMAGES="${UPSTREAM_IMAGES:-${SCRIPT_DIR}/upstream-images.txt}"
 
 # Verify crane is available
 if ! command -v crane &>/dev/null; then
@@ -136,71 +133,6 @@ push_local_images() {
 }
 
 # ---------------------------------------------------------------------------
-# push_upstream_images — Copy upstream images from Harbor proxy-cache to library
-# ---------------------------------------------------------------------------
-# Reads upstream-images.txt and uses crane copy to replicate images from
-# Harbor's proxy-cache projects (which mirror upstream registries) into the
-# library project. This ensures operator images are available even if the
-# upstream registry is unreachable.
-push_upstream_images() {
-  local manifest="${UPSTREAM_IMAGES}"
-
-  if [[ ! -f "${manifest}" ]]; then
-    echo "WARNING: Upstream images manifest not found: ${manifest}" >&2
-    return 0
-  fi
-
-  local copied=0 skipped=0 failed=0
-
-  while IFS= read -r line; do
-    # Skip blank lines and comments
-    [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
-
-    # Parse: <library-name>:<tag> <proxy-cache-project>/<image-path>:<tag>
-    local target source
-    target="$(echo "${line}" | awk '{print $1}')"
-    source="$(echo "${line}" | awk '{print $2}')"
-
-    if [[ -z "${target}" || -z "${source}" ]]; then
-      echo "WARNING: Skipping malformed line: ${line}" >&2
-      continue
-    fi
-
-    local full_ref="${HARBOR_FQDN}/${HARBOR_PROJECT}/${target}"
-    local source_ref="${HARBOR_FQDN}/${source}"
-
-    # Idempotency check — skip if image already exists in library
-    if crane manifest "${full_ref}" "${CRANE_TLS_FLAGS[@]}" &>/dev/null; then
-      echo "SKIP: ${full_ref} already exists"
-      skipped=$((skipped + 1))
-      continue
-    fi
-
-    echo "COPY: ${source_ref} -> ${full_ref}"
-    if crane copy "${source_ref}" "${full_ref}" "${CRANE_TLS_FLAGS[@]}"; then
-      copied=$((copied + 1))
-    else
-      echo "ERROR: Failed to copy ${source_ref} -> ${full_ref}" >&2
-      failed=$((failed + 1))
-    fi
-  done < "${manifest}"
-
-  echo ""
-  echo "Upstream images: ${copied} copied, ${skipped} skipped, ${failed} failed"
-  return "${failed}"
-}
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-TOTAL_FAILURES=0
-
-push_local_images || TOTAL_FAILURES=$((TOTAL_FAILURES + $?))
-push_upstream_images || TOTAL_FAILURES=$((TOTAL_FAILURES + $?))
-
-if [[ "${TOTAL_FAILURES}" -gt 0 ]]; then
-  echo "ERROR: ${TOTAL_FAILURES} image operation(s) failed" >&2
-  exit 1
-fi
-
-echo "All image operations completed successfully."
+push_local_images
