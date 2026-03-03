@@ -252,7 +252,7 @@ resource "null_resource" "deploy_cnpg" {
       kubectl apply -f "${path.module}/operators/manifests/cnpg-system/crds.yaml"
 
       # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
-      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml webhook.yaml; do
+      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml webhook.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/cnpg-system/$f"
       done
 
@@ -301,7 +301,7 @@ resource "null_resource" "deploy_mariadb_operator" {
       kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/crds.yaml"
 
       # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
-      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml webhook.yaml; do
+      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml webhook.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
       done
 
@@ -351,7 +351,7 @@ resource "null_resource" "deploy_redis_operator" {
 
       # Apply remaining static manifests (rbac, service, hpa, networkpolicy)
       # Note: Redis Operator does not use webhooks
-      for f in rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
+      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/redis-operator/$f"
       done
 

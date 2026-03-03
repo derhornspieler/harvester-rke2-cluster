@@ -65,19 +65,24 @@ spec:
             - name: webhook-server
               containerPort: 9443
               protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 9443
+              scheme: HTTPS
+            failureThreshold: 30
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /readyz
               port: 9443
               scheme: HTTPS
-            initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
             httpGet:
               path: /readyz
               port: 9443
               scheme: HTTPS
-            initialDelaySeconds: 5
             periodSeconds: 10
           resources:
             requests:
