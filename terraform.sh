@@ -548,73 +548,28 @@ cmd_destroy() {
   vm_namespace=$(_get_tfvar_value vm_namespace)
   cluster_name=$(_get_tfvar_value cluster_name)
 
+  # ---------------------------------------------------------------------------
+  # Preserve cloud credential across destroy/recreate cycles.
+  #
+  # The cloud credential kubeconfig shares a Rancher token with the state
+  # backend kubeconfig. If Terraform destroys the credential, Rancher
+  # invalidates the token and Terraform can't save state (403). Instead of
+  # a complex recovery dance, we simply remove the credential from state
+  # before destroy — Rancher keeps it alive, tokens stay valid, and the
+  # next 'apply' will recreate it in state.
+  # ---------------------------------------------------------------------------
+  if terraform state show rancher2_cloud_credential.harvester &>/dev/null; then
+    log_info "Preserving cloud credential (removing from state to prevent token invalidation)..."
+    terraform state rm rancher2_cloud_credential.harvester &>/dev/null || true
+    log_ok "Cloud credential preserved in Rancher"
+  fi
+
   log_info "Running: terraform destroy $*"
   cd "$SCRIPT_DIR"
   local tf_exit=0
   terraform destroy "$@" || tf_exit=$?
 
-  # ---------------------------------------------------------------------------
-  # Handle "Failed to save state" after cloud credential destruction.
-  #
-  # The cloud credential kubeconfig shares the same Rancher token as the state
-  # backend kubeconfig (kubeconfig-harvester.yaml). When Terraform destroys
-  # rancher2_cloud_credential, Rancher invalidates the token, causing state
-  # save to fail with 403 "system:unauthenticated". Terraform writes the
-  # successfully-emptied state to errored.tfstate instead.
-  #
-  # Recovery: regenerate the Harvester kubeconfig (fresh token), re-init the
-  # backend, force-unlock the stale lease, and push the errored state.
-  # ---------------------------------------------------------------------------
-  if [[ $tf_exit -ne 0 && -f "${SCRIPT_DIR}/errored.tfstate" ]]; then
-    log_warn "Terraform failed to save state (token likely invalidated by cloud credential destroy)"
-    log_info "Recovering: regenerating Harvester kubeconfig with fresh token..."
-
-    # Regenerate kubeconfig-harvester.yaml with a fresh Rancher API token
-    local rancher_url rancher_token harvester_cluster_id
-    rancher_url=$(_get_tfvar_value rancher_url)
-    rancher_token=$(_get_tfvar_value rancher_token)
-    harvester_cluster_id=$(_get_tfvar_value harvester_cluster_id)
-
-    local response config
-    response=$(curl -sk -X POST \
-      "${rancher_url}/v3/clusters/${harvester_cluster_id}?action=generateKubeconfig" \
-      -H "Authorization: Bearer ${rancher_token}" 2>/dev/null || echo "")
-    config=$(echo "$response" | jq -r '.config // empty' 2>/dev/null || echo "")
-
-    if [[ -n "$config" ]]; then
-      echo "$config" > "$HARVESTER_KUBECONFIG"
-      chmod 600 "$HARVESTER_KUBECONFIG"
-      log_ok "Harvester kubeconfig regenerated"
-    else
-      log_error "Failed to regenerate Harvester kubeconfig"
-      log_error "Manually recover: generate kubeconfig, run 'terraform state push errored.tfstate'"
-      return 1
-    fi
-
-    # Re-init backend with new kubeconfig
-    log_info "Re-initializing Terraform backend..."
-    terraform init -input=false -reconfigure 2>/dev/null || true
-
-    # Force-unlock the stale lease (the old token can't release it)
-    local lock_output lock_id
-    lock_output=$(terraform plan -input=false -no-color 2>&1 || true)
-    lock_id=$(echo "$lock_output" | grep 'ID:' | head -1 | awk '{print $2}' || true)
-    if [[ -n "$lock_id" ]]; then
-      log_info "Force-unlocking stale state lock (ID: ${lock_id})..."
-      terraform force-unlock -force "$lock_id" 2>/dev/null || true
-    fi
-
-    # Push the errored state (which has all resources destroyed)
-    log_info "Pushing recovered state..."
-    if terraform state push errored.tfstate; then
-      log_ok "State recovered successfully"
-      rm -f "${SCRIPT_DIR}/errored.tfstate"
-    else
-      log_error "Failed to push recovered state"
-      log_error "Manually run: terraform state push errored.tfstate"
-      return 1
-    fi
-  elif [[ $tf_exit -ne 0 ]]; then
+  if [[ $tf_exit -ne 0 ]]; then
     log_error "Terraform destroy failed (exit $tf_exit)"
     return $tf_exit
   fi
