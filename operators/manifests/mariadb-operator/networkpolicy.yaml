@@ -29,24 +29,14 @@ spec:
         - port: 8081
           protocol: TCP
   egress:
-    # Allow DNS resolution (kube-dns only)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
+    # Allow DNS resolution
+    - ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Allow kube-apiserver access (service ClusterIP + direct)
-    - to:
-        - ipBlock:
-            cidr: 10.43.0.1/32
-      ports:
+    # Allow kube-apiserver access
+    - ports:
         - port: 443
           protocol: TCP
         - port: 6443

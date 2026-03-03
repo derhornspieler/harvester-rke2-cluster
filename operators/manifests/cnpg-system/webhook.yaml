@@ -4,7 +4,7 @@ kind: MutatingWebhookConfiguration
 metadata:
   name: cnpg-mutating-webhook-configuration
   labels:
-    app.kubernetes.io/name: cnpg
+    app.kubernetes.io/name: cloudnative-pg
 webhooks:
   - name: mbackup.cnpg.io
     admissionReviewVersions: ["v1"]
@@ -76,7 +76,7 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: cnpg-validating-webhook-configuration
   labels:
-    app.kubernetes.io/name: cnpg
+    app.kubernetes.io/name: cloudnative-pg
 webhooks:
   - name: vbackup.cnpg.io
     admissionReviewVersions: ["v1"]

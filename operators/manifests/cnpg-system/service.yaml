@@ -4,11 +4,11 @@ metadata:
   name: cnpg-webhook-service
   namespace: cnpg-system
   labels:
-    app.kubernetes.io/name: cnpg
+    app.kubernetes.io/name: cloudnative-pg
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: cnpg
+    app.kubernetes.io/name: cloudnative-pg
   ports:
     - name: webhook
       port: 443
