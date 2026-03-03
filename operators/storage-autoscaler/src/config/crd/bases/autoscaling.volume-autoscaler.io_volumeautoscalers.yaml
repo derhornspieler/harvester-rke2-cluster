@@ -1,0 +1,300 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: volumeautoscalers.autoscaling.volume-autoscaler.io
+spec:
+  group: autoscaling.volume-autoscaler.io
+  names:
+    kind: VolumeAutoscaler
+    listKind: VolumeAutoscalerList
+    plural: volumeautoscalers
+    singular: volumeautoscaler
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Usage threshold percentage
+      jsonPath: .spec.thresholdPercent
+      name: Threshold
+      type: integer
+    - description: Maximum PVC size
+      jsonPath: .spec.maxSize
+      name: MaxSize
+      type: string
+    - description: Total scale events
+      jsonPath: .status.totalScaleEvents
+      name: ScaleEvents
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VolumeAutoscaler is the Schema for the volumeautoscalers API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of VolumeAutoscaler.
+            properties:
+              cooldownPeriod:
+                default: 5m
+                description: cooldownPeriod is the minimum wait time between consecutive
+                  expansions of the same PVC.
+                type: string
+              increaseMinimum:
+                anyOf:
+                - type: integer
+                - type: string
+                description: increaseMinimum is the minimum amount to add per expansion
+                  (floor for small PVCs).
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              increasePercent:
+                default: 20
+                description: increasePercent is the percentage of current capacity
+                  to add on each expansion.
+                format: int32
+                maximum: 100
+                minimum: 1
+                type: integer
+              inodeThresholdPercent:
+                default: 0
+                description: |-
+                  inodeThresholdPercent triggers expansion when inode usage exceeds this percentage.
+                  0 means disabled.
+                format: int32
+                maximum: 99
+                minimum: 0
+                type: integer
+              maxSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: maxSize is the maximum size a PVC can be expanded to.
+                  Required safety cap.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              pollInterval:
+                default: 60s
+                description: pollInterval is how often to check volume metrics.
+                type: string
+              prometheusURL:
+                default: http://prometheus.monitoring.svc.cluster.local:9090
+                description: prometheusURL is the Prometheus endpoint to query for
+                  volume metrics.
+                type: string
+              target:
+                description: target identifies which PVCs to autoscale.
+                properties:
+                  pvcName:
+                    description: |-
+                      pvcName targets a single PVC by name in the CR's namespace.
+                      Mutually exclusive with selector.
+                    type: string
+                  selector:
+                    description: |-
+                      selector matches multiple PVCs by labels in the CR's namespace.
+                      Mutually exclusive with pvcName.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+              thresholdPercent:
+                default: 80
+                description: thresholdPercent is the usage percentage that triggers
+                  expansion.
+                format: int32
+                maximum: 99
+                minimum: 1
+                type: integer
+            required:
+            - maxSize
+            - target
+            type: object
+          status:
+            description: status defines the observed state of VolumeAutoscaler.
+            properties:
+              conditions:
+                description: conditions represent the current state of the VolumeAutoscaler
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastPollTime:
+                description: lastPollTime is the timestamp of the last metrics check.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed.
+                format: int64
+                type: integer
+              pvcs:
+                description: pvcs contains per-PVC status information.
+                items:
+                  description: PVCStatus tracks the observed state of an individual
+                    PVC.
+                  properties:
+                    currentSize:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: currentSize is the current storage capacity of
+                        the PVC.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    lastScaleSize:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: lastScaleSize is the size of the last expansion.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    lastScaleTime:
+                      description: lastScaleTime is when this PVC was last expanded.
+                      format: date-time
+                      type: string
+                    name:
+                      description: name is the PVC name.
+                      type: string
+                    usageBytes:
+                      description: usageBytes is the number of bytes currently used.
+                      format: int64
+                      type: integer
+                    usagePercent:
+                      description: usagePercent is the current usage as a percentage
+                        of capacity.
+                      format: int32
+                      type: integer
+                  required:
+                  - currentSize
+                  - name
+                  type: object
+                type: array
+              totalScaleEvents:
+                description: totalScaleEvents is the cumulative number of PVC expansions
+                  performed.
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
