@@ -46,10 +46,10 @@ spec:
       containers:
         - name: manager
           image: quay.io/opstree/redis-operator:${version}
-          command:
-            - /operator
+          env:
+            - name: ENABLE_WEBHOOKS
+              value: "false"
           args:
-            - manager
             - --leader-elect
             - --metrics-bind-address=:8080
             - --health-probe-bind-address=:8081
