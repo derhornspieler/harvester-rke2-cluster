@@ -8,7 +8,11 @@ Image tarballs are large binary artifacts and must not be committed to git.
 Users must build and place them here before running `terraform apply` with
 `deploy_operators = true`.
 
-## Naming Convention
+## Custom Operators (node-labeler, storage-autoscaler)
+
+Custom operators require pre-built image tarballs stored in this directory.
+
+### Naming Convention
 
 ```
 <name>-<version>-<arch>.tar.gz
@@ -18,7 +22,7 @@ Examples:
 - `node-labeler-v0.2.0-amd64.tar.gz`
 - `storage-autoscaler-v0.2.0-amd64.tar.gz`
 
-## How to Build
+### How to Build
 
 From the repository root, build each operator image and save as a tarball:
 
@@ -40,7 +44,7 @@ Then copy the tarballs into this directory:
 cp operators/images/*.tar.gz cluster/operators/images/
 ```
 
-## What Happens at Deploy Time
+### What Happens at Deploy Time
 
 When `terraform apply` runs with `deploy_operators = true`, the
 `push-images.sh` script:
@@ -52,3 +56,15 @@ When `terraform apply` runs with `deploy_operators = true`, the
 
 The operator deployments reference images from Harbor, so images must be
 pushed before pods can start.
+
+## Database Operators (CloudNativePG, MariaDB, Redis)
+
+Database operators reference upstream container images directly via the Harbor
+registry proxy-cache. They do NOT require local image tarballs in this directory.
+
+Upstream images are automatically cached by Harbor's proxy-cache configuration
+and pulled through the shared `registries.yaml` on cluster nodes. This allows
+the database operators to be deployed by simply applying their static manifests
+without a separate image push step.
+
+See the design document for details: `docs/plans/2026-03-03-db-operators-design.md`

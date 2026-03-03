@@ -14,6 +14,7 @@ This Terraform module orchestrates the creation of a fully managed RKE2 cluster 
 - Sets up Traefik as the ingress controller with static LoadBalancer IP
 - Integrates Harbor as a pull-through registry cache (8 upstream registries)
 - Deploys custom operators: node-labeler and storage-autoscaler
+- Deploys database operators: CloudNativePG (PostgreSQL), MariaDB Operator, OpsTree Redis Operator
 
 ## Architecture
 
@@ -322,50 +323,40 @@ Registry mirrors are initialized with the bootstrap registry and patched to Harb
 
 ## Operator Deployment
 
-Two custom Kubernetes operators are optionally deployed after cluster creation:
+Terraform optionally deploys cluster infrastructure operators after creation:
 
-### node-labeler (v0.2.0)
+### Custom Operators
 
-Watches Harvester VM annotations and syncs them to Kubernetes node labels. Enables workload affinity based on VM properties.
+**node-labeler (v0.2.0)**: Watches Harvester VM annotations and syncs them to Kubernetes node labels. Enables workload affinity based on VM properties.
 
-**Deployment**:
-```bash
-# Requires pre-built image tarball
-make -C operators/node-labeler docker-save IMG=node-labeler:v0.2.0
-cp operators/node-labeler-v0.2.0-amd64.tar.gz operators/images/
-```
+**storage-autoscaler (v0.2.0)**: Monitors Harvester VM disk usage and automatically expands PersistentVolumes on nodes near capacity.
 
-**Terraform apply** (if `deploy_operators = true`):
-1. Renders `operators/templates/node-labeler-deployment.yaml.tftpl`
-2. Authenticates to Harbor with `var.harbor_admin_password`
-3. Pushes image tarball to `harbor.<domain>/library/node-labeler:v0.2.0`
-4. Deploys via kubectl
-
-### storage-autoscaler (v0.2.0)
-
-Monitors Harvester VM disk usage and automatically expands PersistentVolumes on nodes near capacity.
-
-**Deployment**: Same process as node-labeler.
-
-### Operator Images
-
-Image tarballs are NOT committed to git. To deploy operators:
-
+**Deployment** (custom operators):
 1. Build images from source:
    ```bash
    cd operators/node-labeler && make docker-save IMG=node-labeler:v0.2.0
    cd operators/storage-autoscaler && make docker-save IMG=storage-autoscaler:v0.2.0
    ```
 
-2. Place tarballs in `operators/images/`:
-   ```bash
-   cp operators/*/build/node-labeler-v0.2.0-amd64.tar.gz operators/images/
-   cp operators/*/build/storage-autoscaler-v0.2.0-amd64.tar.gz operators/images/
-   ```
+2. Place tarballs in `operators/images/`
 
 3. Set `deploy_operators = true` and `harbor_admin_password` in `terraform.tfvars`
 
-4. Run `terraform apply` (image push is automatic via `push-images.sh`)
+4. Run `terraform apply` (image push and deployment are automatic)
+
+### Database Operators
+
+**CloudNativePG (v1.28.1)**: PostgreSQL operator supporting high-availability clusters, backups, and connection pooling.
+
+**MariaDB Operator (v25.10.4)**: MariaDB/MaxScale operator supporting multi-instance replication and automated backups.
+
+**OpsTree Redis Operator (v0.23.0)**: Redis operator supporting standalone, cluster, and Sentinel deployments.
+
+Database operators run on the database worker pool. They reference upstream container images directly via the Harbor registry proxy-cache (no local image tarballs required).
+
+**Deployment** (database operators):
+- Set `deploy_cnpg = true`, `deploy_mariadb_operator = true`, and `deploy_redis_operator = true` in `terraform.tfvars`
+- Run `terraform apply` (manifests are automatically applied)
 
 ## Credential Management
 
