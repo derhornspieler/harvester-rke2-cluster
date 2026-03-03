@@ -95,5 +95,6 @@ ssh_authorized_keys = [
 ]
 
 # Operator Deployment (optional -- deploys node-labeler + storage-autoscaler)
-# deploy_operators       = true
-# harbor_admin_password  = "your-harbor-admin-password"
+# deploy_operators      = true
+# harbor_admin_user     = "admin"
+# harbor_admin_password = "your-harbor-admin-password"

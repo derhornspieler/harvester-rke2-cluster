@@ -82,7 +82,7 @@ resource "null_resource" "operator_image_push" {
     command = "${path.module}/operators/push-images.sh"
     environment = {
       HARBOR_FQDN     = var.harbor_fqdn
-      HARBOR_USER     = "admin"
+      HARBOR_USER     = var.harbor_admin_user
       HARBOR_PASSWORD = var.harbor_admin_password
       HARBOR_CA_PEM   = var.private_ca_pem
       IMAGES_DIR      = "${path.module}/operators/images"

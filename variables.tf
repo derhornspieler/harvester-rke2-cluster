@@ -399,6 +399,12 @@ variable "deploy_operators" {
   default     = true
 }
 
+variable "harbor_admin_user" {
+  description = "Harbor username for pushing operator images (required when deploy_operators = true)"
+  type        = string
+  default     = "admin"
+}
+
 variable "harbor_admin_password" {
   description = "Harbor admin password for pushing operator images (required when deploy_operators = true)"
   type        = string
