@@ -394,7 +394,7 @@ variable "bootstrap_registry_ca_pem" {
 # -----------------------------------------------------------------------------
 
 variable "deploy_operators" {
-  description = "Deploy node-labeler and storage-autoscaler after cluster creation"
+  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, and optionally DB operators)"
   type        = bool
   default     = true
 }
