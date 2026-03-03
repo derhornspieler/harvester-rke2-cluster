@@ -98,3 +98,8 @@ ssh_authorized_keys = [
 # deploy_operators      = true
 # harbor_admin_user     = "admin"
 # harbor_admin_password = "your-harbor-admin-password"
+
+# Database Operators (optional -- requires deploy_operators = true)
+# deploy_cnpg              = true
+# deploy_mariadb_operator  = true
+# deploy_redis_operator    = true

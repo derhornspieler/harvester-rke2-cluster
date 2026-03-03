@@ -399,6 +399,24 @@ variable "deploy_operators" {
   default     = true
 }
 
+variable "deploy_cnpg" {
+  description = "Deploy CloudNativePG operator (requires deploy_operators = true)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_mariadb_operator" {
+  description = "Deploy MariaDB Operator (requires deploy_operators = true)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_redis_operator" {
+  description = "Deploy OpsTree Redis Operator (requires deploy_operators = true)"
+  type        = bool
+  default     = true
+}
+
 variable "harbor_admin_user" {
   description = "Harbor username for pushing operator images (required when deploy_operators = true)"
   type        = string
