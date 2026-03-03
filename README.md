@@ -442,11 +442,45 @@ To replace a node (e.g., due to disk corruption):
 
 ### Destroy Cluster
 
+Use `destroy-cluster.sh` to safely tear down the RKE2 cluster:
+
 ```bash
-terraform destroy
+./destroy-cluster.sh              # Interactive (prompts for confirmation)
+./destroy-cluster.sh -auto-approve  # Non-interactive
 ```
 
-This removes all RKE2 VMs from Harvester but leaves the Harvester cluster and networks intact.
+This is a convenience wrapper around `terraform.sh destroy` that preserves cloud credentials. Cloud credentials stored in `kubeconfig-harvester-cloud-cred.yaml` and `harvester-cloud-provider-kubeconfig` are NOT deleted, allowing you to recreate the cluster without re-running `prepare.sh`.
+
+The cleanup process:
+1. Deletes the RKE2 cluster from Rancher API
+2. Waits for VMs to be deleted by Cluster API (asynchronous)
+3. Clears any stuck finalizers on Harvester machines
+4. Cleans up orphaned secrets and RBAC entries in `fleet-default`
+5. Removes orphaned VMs, disks, and data volumes from Harvester
+6. Preserves the cloud credential so you can re-create the cluster immediately
+
+**Note**: This removes all RKE2 VMs from Harvester but leaves the Harvester cluster and networks intact.
+
+### Nuclear Cleanup
+
+If `destroy-cluster.sh` hangs or leaves orphaned resources, use `nuke-cluster.sh`:
+
+```bash
+./nuke-cluster.sh              # Interactive
+./nuke-cluster.sh -y           # Skip confirmation
+```
+
+This performs an irreversible nuclear cleanup:
+1. Deletes the cluster from Rancher API
+2. Force-deletes all orphaned CAPI machines in `fleet-default`
+3. Force-deletes all VMs and VMIs in the VM namespace
+4. Cleans up Rancher resources (HarvesterConfigs, Fleet bundles)
+5. Cleans up orphaned secrets and RBAC entries
+6. Cleans up Harvester resources (PVCs, DataVolumes, namespace leftovers)
+7. Wipes Terraform state from both local and Kubernetes backend
+8. Final verification
+
+**WARNING**: This is destructive and irreversible. All cluster data will be permanently lost.
 
 ## Troubleshooting
 
@@ -579,7 +613,9 @@ kubectl rollout restart -n kube-system ds/cilium
 ├── operators.tf                       # node-labeler + storage-autoscaler
 │
 ├── prepare.sh                         # First-time credential prep
-├── terraform.sh                       # State backend sync script
+├── terraform.sh                       # State backend sync + destroy wrapper
+├── destroy-cluster.sh                 # Convenience destroy wrapper
+├── nuke-cluster.sh                    # Nuclear cleanup for stuck resources
 │
 ├── operators/
 │   ├── images/                        # OCI image tarballs (gitignored)

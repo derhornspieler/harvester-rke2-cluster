@@ -241,6 +241,163 @@ terraform console
 
 ---
 
+### Symptom: Duplicate MachineDeployments appear, VMs keep restarting
+
+**Quick Check**
+- [ ] Check machine deployments: `kubectl --kubeconfig=kubeconfig-harvester.yaml get machinedeployments -A`
+- [ ] Check for duplicate pool names in Rancher cluster: `curl -sk https://<RANCHER_URL>/v1/provisioning.cattle.io.clusters/fleet-default/<CLUSTER_NAME> | jq '.spec.rkeConfig.machinePools[] | .name'`
+- [ ] Check Terraform state for duplicates: `./terraform.sh state list | grep machine_pools`
+
+**Root Causes & Solutions**
+
+1. **Missing cloud_credential_secret_name on cluster resource**
+   - Issue: The `rancher2_cluster_v2.rke2` resource in `cluster.tf` did not have `cloud_credential_secret_name` defined (critical fix in recent versions)
+   - Symptom: Terraform creates machine pools, but Rancher cannot associate them with the cloud credential, causing duplicate provisioning attempts
+   - Solution: Verify `cluster.tf` line 22 has: `cloud_credential_secret_name = rancher2_cloud_credential.harvester.id`
+   - If missing, add it and re-apply: `./terraform.sh apply`
+   - This tells Rancher which cloud credential to use for the entire cluster (not just per-pool)
+
+2. **Stale/orphaned machine deployment from failed apply**
+   - Issue: A previous `terraform apply` was cancelled, leaving machine deployment CRDs on Rancher
+   - Symptom: `terraform plan` shows new pools, but Rancher has old pools still running
+   - Solution: Delete orphaned deployments via Rancher API or kubectl, then re-apply
+   - Steps:
+     ```bash
+     # List all machine deployments
+     kubectl --kubeconfig=kubeconfig-harvester.yaml get machinedeployments -A
+
+     # Delete orphaned ones (be careful — this will delete nodes)
+     kubectl --kubeconfig=kubeconfig-harvester.yaml delete machinedeployment <NAME> -n <NS>
+
+     # Re-apply to recreate with correct spec
+     ./terraform.sh apply
+     ```
+
+**Escalation**
+- If duplicates persist after adding cloud_credential_secret_name: manually force node reconciliation via Rancher UI or clear Terraform state and re-apply
+- If VMs are restarting: check Harvester VM events (`kubectl --kubeconfig=kubeconfig-harvester.yaml describe vm <VM_NAME> -n <NS>`)
+
+---
+
+### Symptom: Rancher Steve API phantom objects after destroy
+
+**Quick Check**
+- [ ] Check for phantom resources: `curl -sk https://<RANCHER_URL>/v1/provisioning.cattle.io.clusters/fleet-default | jq '.metadata.deletionTimestamp'`
+- [ ] Check HarvesterMachines: `curl -sk https://<RANCHER_URL>/v1/rke-machine.cattle.io.harvestermachines | jq '.data[] | select(.metadata.deletionTimestamp != null) | .metadata.name'`
+- [ ] List orphaned CAPI Machines: `curl -sk https://<RANCHER_URL>/v1/cluster.x-k8s.io.machines | jq '.data[] | select(.metadata.deletionTimestamp != null) | .metadata.name'`
+
+**Root Causes & Solutions**
+
+1. **Stuck finalizers on HarvesterMachine objects**
+   - Issue: HarvesterMachine objects have `deletionTimestamp` but finalizers prevent deletion
+   - Symptom: After `destroy`, the Rancher API still reports machines exist (phantom objects)
+   - Solution: Use `nuke-cluster.sh` which handles finalizer cleanup, or manually patch:
+     ```bash
+     curl -sk -X PATCH -H "Authorization: Bearer <TOKEN>" \
+       -H "Content-Type: application/merge-patch+json" \
+       "https://<RANCHER_URL>/v1/rke-machine.cattle.io.harvestermachines/fleet-default/<NAME>" \
+       -d '{"metadata":{"finalizers":[]}}'
+     ```
+
+2. **Rancher API async cleanup lag**
+   - Issue: Destroy completed but Rancher's object reconciliation hasn't caught up
+   - Solution: Wait 1-2 minutes for cleanup propagation, or manually delete via API
+   - This is expected behavior — Rancher's Steve API queries eventually return consistent data
+
+3. **Disconnected Harvester cluster**
+   - Issue: If Harvester cluster loses connectivity to Rancher, phantom objects can linger
+   - Solution: Reconnect Harvester, then use `nuke-cluster.sh` to force cleanup
+
+**Escalation**
+- If phantom objects persist: use `nuke-cluster.sh` which bypasses normal deletion and force-deletes all resources
+- If Rancher API is unreachable: check Rancher → Harvester network connectivity
+
+---
+
+### Symptom: Stuck finalizers during cluster deletion
+
+**Quick Check**
+- [ ] Check cluster deletion status: `curl -sk https://<RANCHER_URL>/v1/provisioning.cattle.io.clusters/fleet-default/<CLUSTER_NAME> -H "Authorization: Bearer <TOKEN>" | jq '.metadata | {name, deletionTimestamp, finalizers}'`
+- [ ] Check how long it's been stuck: Look at `deletionTimestamp` and compare to current time
+
+**Root Causes & Solutions**
+
+1. **CAPI controller loops detecting drift**
+   - Issue: CAPI's machine controller sees nodes as "unmatched" and keeps trying to reconcile during deletion
+   - Symptom: `terraform destroy` hangs while trying to delete the cluster resource (max 5-10 minutes)
+   - Solution: `terraform.sh destroy` calls `post_destroy_cleanup()` which patches out finalizers
+   - If still stuck, manually clear:
+     ```bash
+     ./terraform.sh destroy -lock=false
+     ```
+
+2. **Harvester cluster provisioning stalled**
+   - Issue: Machines cannot be deleted because Harvester API is slow or unavailable
+   - Solution: Check Harvester health and retry destroy
+     ```bash
+     kubectl --kubeconfig=kubeconfig-harvester.yaml cluster-info
+     ./terraform.sh destroy -auto-approve
+     ```
+
+3. **Network connectivity broken between Rancher and Harvester**
+   - Issue: Rancher cannot communicate with Harvester to delete VMs
+   - Solution: Restore connectivity, then use `nuke-cluster.sh` to force cleanup
+
+**Escalation**
+- If stuck > 10 minutes: use `nuke-cluster.sh -y` for irreversible cleanup
+- If Harvester is offline: wait for it to come back online, then use `nuke-cluster.sh`
+
+---
+
+### Symptom: Compute pool not provisioning (0 min_count not triggering scale-from-zero)
+
+**Quick Check**
+- [ ] Verify compute pool exists: `./terraform.sh state list | grep compute`
+- [ ] Check autoscaler annotations: `kubectl get machinepool compute -o yaml | grep autoscaler`
+- [ ] Check if pods are actually requesting compute node affinity: `kubectl get pods -A -o json | jq '.items[] | select(.spec.nodeSelector["workload-type"]=="compute") | .metadata.name'`
+- [ ] Check autoscaler logs: `kubectl logs -n cattle-system -l app.kubernetes.io/name=rancher-cluster-autoscaler -f`
+
+**Root Causes & Solutions**
+
+1. **No pods requesting compute affinity**
+   - Issue: Compute pool has `compute_min_count = 0` (scale-from-zero), but no workloads are scheduled with `workload-type=compute` affinity
+   - Solution: Deploy a pod with `nodeSelector: {"workload-type": "compute"}`:
+     ```yaml
+     apiVersion: v1
+     kind: Pod
+     metadata:
+       name: compute-test
+     spec:
+       nodeSelector:
+         workload-type: compute
+       containers:
+       - name: alpine
+         image: alpine:latest
+         command: ["sleep", "3600"]
+     ```
+
+2. **Autoscaler resource annotations missing or incorrect**
+   - Issue: `cluster.tf` compute pool missing resource annotations for scale-from-zero
+   - Symptom: Autoscaler sees `compute_min_count = 0` but doesn't know node capacity, so it won't scale up
+   - Solution: Verify annotations in `cluster.tf` lines 119-122:
+     ```hcl
+     "cluster.provisioning.cattle.io/autoscaler-resource-cpu"     = var.compute_cpu
+     "cluster.provisioning.cattle.io/autoscaler-resource-memory"  = "${var.compute_memory}Gi"
+     "cluster.provisioning.cattle.io/autoscaler-resource-storage" = "${var.compute_disk_size}Gi"
+     ```
+   - If missing, add them and re-apply: `./terraform.sh apply`
+
+3. **Autoscaler controller not running or unhealthy**
+   - Issue: Rancher cluster autoscaler pod is in CrashLoopBackOff or not scheduled
+   - Solution: Check pod status: `kubectl get pod -n cattle-system -l app.kubernetes.io/name=rancher-cluster-autoscaler`
+   - Check logs: `kubectl logs -n cattle-system -l app.kubernetes.io/name=rancher-cluster-autoscaler`
+
+**Escalation**
+- If autoscaler is healthy and resource annotations exist, verify pod affinity is set correctly
+- If scale-from-zero still doesn't work: manually add a compute node via Terraform (`compute_min_count = 1`), then let autoscaler scale it down when workload completes
+
+---
+
 ## 2. Terraform State Issues
 
 ### Symptom: "Error locking state" or "lock already held"

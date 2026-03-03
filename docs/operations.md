@@ -11,9 +11,10 @@ This guide covers routine operational tasks for the RKE2 cluster deployed on Har
 5. [Registry Mirror Management](#5-registry-mirror-management)
 6. [Backup and Recovery](#6-backup-and-recovery)
 7. [Monitoring Readiness](#7-monitoring-readiness)
-8. [Destroy and Rebuild](#8-destroy-and-rebuild)
-9. [terraform.sh Reference](#9-terraformsh-reference)
-10. [prepare.sh Reference](#10-preparesh-reference)
+8. [Clean Destroy](#8-clean-destroy)
+9. [Nuclear Cleanup](#9-nuclear-cleanup)
+10. [terraform.sh Reference](#10-terraformsh-reference)
+11. [prepare.sh Reference](#11-preparesh-reference)
 
 ---
 
@@ -730,92 +731,187 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 
 ---
 
-## 8. Destroy and Rebuild
+## 8. Clean Destroy
 
-### 8.1 Clean Destroy
-
-To safely destroy the cluster and all resources:
+Use `destroy-cluster.sh` to safely destroy the cluster and all resources:
 
 ```bash
-./terraform.sh destroy -auto-approve
+./destroy-cluster.sh              # Interactive (prompts for confirmation)
+./destroy-cluster.sh -auto-approve  # Non-interactive
 ```
 
-This:
-1. Deletes rancher2_cluster_v2 (stops Rancher provisioning)
-2. Waits for VMs to be deleted by CAPI (async)
-3. Clears stuck finalizers on HarvesterMachines, CAPI Machines, and cluster
-4. Removes orphaned VMIs, DataVolumes, and PVCs from Harvester
-5. Pushes recovered state back to K8s backend
+This is a convenience wrapper around `terraform.sh destroy`. The cleanup process:
+
+1. **Delete cluster from Rancher API** — Stops Rancher provisioning
+2. **Wait for VMs to be deleted by CAPI** — Asynchronous deletion
+3. **Clear stuck finalizers** on HarvesterMachines, CAPI Machines, and cluster (if needed)
+4. **Clean up orphaned Fleet bundles** for the destroyed cluster
+5. **Remove orphaned secrets and RBAC** in `fleet-default` namespace on Rancher
+6. **Wait for VM deletion** with 300-second timeout
+7. **Force-delete orphaned resources** if VMs are still present:
+   - VM finalizers (on stuck VMs)
+   - VMIs (Virtual Machine Instances)
+   - DataVolumes
+   - PVCs (Persistent Volume Claims)
+8. **Push recovered state** back to Kubernetes backend
+
+**Cloud Credential Preservation**: The cloud credentials in:
+- `kubeconfig-harvester-cloud-cred.yaml`
+- `harvester-cloud-provider-kubeconfig`
+
+are **NOT deleted**, so you can recreate the cluster without re-running `prepare.sh`.
 
 **Flowchart**:
 
 ```mermaid
 graph TD
-    A["terraform destroy"] --> B["Delete rancher2_cluster_v2<br/>from Terraform state"]
-    B --> C["Rancher begins async<br/>CAPI cluster teardown"]
-    C --> D{"Check for stuck<br/>finalizers"}
-    D -->|Yes| E["Clear HarvesterMachine<br/>finalizers"]
-    E --> F["Clear CAPI Machine<br/>finalizers"]
-    F --> G["Clear Provisioning Cluster<br/>finalizers"]
-    G --> H["Poll VMs for deletion<br/>300s timeout"]
-    D -->|No| H
-    H --> I{"VMs<br/>deleted?"}
-    I -->|No| J["Remove stuck VM<br/>finalizers"]
-    J --> K["Delete VMIs"]
-    K --> L["Delete DataVolumes"]
-    L --> M["Delete PVCs"]
-    I -->|Yes| M
-    M --> N["Push state<br/>to Harvester"]
-    N --> O["✓ Cluster destroyed"]
+    A["destroy-cluster.sh"] --> B["Pull secrets<br/>from Harvester"]
+    B --> C["Call terraform destroy"]
+    C --> D["Delete rancher2_cluster_v2"]
+    D --> E["Rancher begins async<br/>CAPI teardown"]
+    E --> F["Clean stuck finalizers<br/>on Rancher management cluster"]
+    F --> G["Clear HarvesterMachine<br/>finalizers"]
+    G --> H["Clear CAPI Machine<br/>finalizers"]
+    H --> I["Clear Provisioning Cluster<br/>finalizers"]
+    I --> J["Delete Fleet bundles"]
+    J --> K["Poll VMs for deletion<br/>300s timeout"]
+    K --> L{"VMs<br/>deleted?"}
+    L -->|Yes| M["Push state<br/>to Harvester"]
+    L -->|No| N["Force-delete VM finalizers"]
+    N --> O["Delete VMIs"]
+    O --> P["Delete DataVolumes"]
+    P --> Q["Delete PVCs"]
+    Q --> M
+    M --> R["✓ Cluster destroyed"]
 ```
 
-### 8.2 Dirty Destroy (Stuck Resources)
+### Troubleshooting Destroy
 
-If destroy hangs or finalizers are stuck:
+If `destroy-cluster.sh` hangs:
 
 ```bash
 # Option 1: Force-unlock if state is locked
 ./terraform.sh destroy -lock=false
 
-# Option 2: Manually clear Rancher finalizers (if infrastructure is stuck)
-# Get stuck resources on Rancher management cluster
-kubectl --kubeconfig=~/.kube/config get harvestermachines.rke-machine.cattle.io -n fleet-default
+# Option 2: Check for stuck finalizers on Rancher management cluster
+kubectl config use-context rancher  # Switch to Rancher
+kubectl get harvestermachines.rke-machine.cattle.io -n fleet-default
+kubectl get machines.cluster.x-k8s.io -n fleet-default
 
 # Patch out finalizers
-kubectl --kubeconfig=~/.kube/config patch harvestermachines.rke-machine.cattle.io/<name> \
+kubectl patch harvestermachines.rke-machine.cattle.io/<name> \
   -n fleet-default \
   -p '{"metadata":{"finalizers":null}}' --type merge
 
-# Option 3: Delete VMs directly on Harvester
+# Option 3: Kill stuck VMs directly on Harvester
 kubectl --kubeconfig=./kubeconfig-harvester.yaml delete vm -n <vm_namespace> --all
 
 # Then re-run destroy
 ./terraform.sh destroy -auto-approve
 ```
 
-### 8.3 Fresh Start
+---
 
-To destroy and immediately recreate:
+## 9. Nuclear Cleanup
+
+For complete cluster removal when `destroy-cluster.sh` fails or leaves orphaned resources, use `nuke-cluster.sh`:
 
 ```bash
-# Destroy cluster + cleanup
-./terraform.sh destroy -auto-approve
+./nuke-cluster.sh              # Interactive (prompts for confirmation)
+./nuke-cluster.sh -y           # Skip confirmation
+./nuke-cluster.sh --yes        # Skip confirmation (long form)
+```
 
-# Verify cleanup completed
-kubectl --kubeconfig=./kubeconfig-harvester.yaml get pvc -n <vm_namespace>
+**WARNING**: This is a destructive, irreversible operation. All cluster resources will be permanently deleted.
+
+### What nuke-cluster.sh Does
+
+The script performs an 8-step nuclear cleanup:
+
+1. **Delete cluster from Rancher API**
+   - Uses Rancher Steve API to delete the RKE2 cluster resource
+   - Sends DELETE request to `/v1/provisioning.cattle.io.clusters/fleet-default/<cluster-name>`
+
+2. **Delete orphaned CAPI machines in fleet-default**
+   - Finds all CAPI Machine objects with `deletionTimestamp != null`
+   - Patches finalizers to unblock deletion
+
+3. **Force-delete all VMs and VMIs in the VM namespace**
+   - Gets all Virtual Machine objects in `<vm_namespace>`
+   - Patches out all finalizers and labels to force immediate deletion
+   - Waits up to 60 seconds per VM
+   - Deletes remaining VMIs (Virtual Machine Instances)
+
+4. **Clean up Rancher resources**
+   - Removes stuck HarvesterMachine finalizers (root cause of stuck VMs)
+   - Deletes orphaned Fleet bundles for the cluster
+
+5. **Clean up orphaned secrets and RBAC in fleet-default**
+   - Uses Rancher API with Steve API to clean:
+     - Secrets for cluster configuration
+     - ServiceAccounts
+     - RoleBindings for cluster access
+
+6. **Clean up orphaned Harvester namespace resources**
+   - Deletes remaining PVCs
+   - Deletes DataVolumes (Harvester CDI volumes)
+   - Patches stuck namespace finalizers
+   - Removes the namespace itself (if empty)
+
+7. **Wipe Terraform state**
+   - Removes local `terraform.tfstate`
+   - Deletes state lease from Kubernetes backend
+   - Clears all secrets from `terraform-state` namespace
+
+8. **Final verification**
+   - Confirms all VMs are deleted
+   - Confirms state is wiped
+   - Displays summary of cleanup actions
+
+### Prerequisites
+
+- `kubectl`, `terraform`, `jq`, `curl` installed
+- `kubeconfig-harvester.yaml` exists (or 'harvester' context in `~/.kube/config`)
+- `terraform.tfvars` contains: `rancher_url`, `rancher_token`, `cluster_name`, `vm_namespace`
+
+### Usage Examples
+
+Interactive with full confirmation prompts:
+
+```bash
+./nuke-cluster.sh
+# Output: You are about to permanently delete the cluster and all its resources.
+# Continue? (yes/no):
+```
+
+Skip confirmation (useful in CI/CD):
+
+```bash
+./nuke-cluster.sh -y
+```
+
+After nuclear cleanup, verify nothing remains:
+
+```bash
+# On Harvester
+kubectl --kubeconfig=./kubeconfig-harvester.yaml get vm -n <vm_namespace>
 # Should return: No resources found
 
-# Verify terraform state is empty
+# On Rancher management cluster
+kubectl config use-context rancher
+kubectl get harvestermachines.rke-machine.cattle.io -n fleet-default
+# Should return: No resources found
+
+# Verify state is gone
 ./terraform.sh state list
 # Should return: (empty)
-
-# Re-initialize and create
-./terraform.sh apply
 ```
 
 ---
 
-## 9. terraform.sh Reference
+---
+
+## 10. terraform.sh Reference
 
 Wrapper script that manages Terraform state in a Kubernetes backend (stored on Harvester).
 
@@ -994,7 +1090,7 @@ tfstate-default-rke2-cluster              # Terraform state (leased by backend)
 
 ---
 
-## 10. prepare.sh Reference
+## 11. prepare.sh Reference
 
 Standalone script for initial credential and kubeconfig setup. Does **not** require prior cluster or state.
 
@@ -1118,7 +1214,8 @@ This operations guide covers day-2 cluster management:
 - **Upgrades**: Kubernetes version, golden image, CA certificates
 - **Registries**: Adding/removing mirrors, Harbor proxy-cache configuration
 - **Backup/Recovery**: etcd snapshots, Terraform state backups, state restoration
-- **Troubleshooting**: Destroy, cleanup, recovery from stuck state
+- **Clean Destroy**: Safe teardown with cloud credential preservation via `destroy-cluster.sh`
+- **Nuclear Cleanup**: Complete resource removal and state wipe via `nuke-cluster.sh` (for stuck/orphaned resources)
 - **Tool Reference**: `terraform.sh` and `prepare.sh` commands and workflows
 
 For additional cluster management tasks, refer to the [Architecture Guide](./architecture.md) and [Troubleshooting Guide](./troubleshooting.md).

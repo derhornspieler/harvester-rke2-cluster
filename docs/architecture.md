@@ -158,6 +158,9 @@ graph TD
 - **Stage 3 (Machine Configs)**: Defines node configuration for each pool (CP, general, compute, database)
 - **Stage 4 (EFI Patches)**: Applies initial bootstrap patches to node configurations (registries, CA certs)
 - **Stage 5 (RKE2 Cluster)**: Creates the actual cluster in Rancher; depends on machine configs and credentials
+  - **Critical**: The cluster resource must set `cloud_credential_secret_name = rancher2_cloud_credential.harvester.id` at the cluster level (not just per-pool)
+  - This tells Rancher which cloud credential to use for all machine pools
+  - Without this, Rancher cannot provision VMs correctly and may create duplicate machine deployments
 - **Stage 6 (Operators)**: Once cluster is running, deploys node-labeler and storage-autoscaler operators
 
 ---
@@ -607,7 +610,79 @@ Monitors Harvester VM disk usage and automatically expands PersistentVolumes on 
 
 ---
 
-## 10. Summary
+## 10. Rancher API vs Harvester Kubeconfig — RBAC & Visibility Gap
+
+A critical operational detail: Rancher's Steve API and direct Harvester kubeconfig provide **different visibility** into cluster resources due to RBAC role differences.
+
+```mermaid
+graph TB
+    subgraph Rancher["Rancher Management Cluster<br/>(rancher.example.com)"]
+        RancherAPI["Rancher Steve API<br/>/v1/provisioning.cattle.io.clusters<br/>/v1/rke-machine.cattle.io.harvestermachines<br/>/v1/cluster.x-k8s.io.machines"]
+        RancherRBAC["RBAC: cluster-admin<br/>or Rancher user token"]
+    end
+
+    subgraph Harvester["Harvester K8s Cluster<br/>(kubeconfig-harvester.yaml)"]
+        HarvesterAPI["Native K8s API<br/>/api/v1/namespaces<br/>/api/v1/persistentvolumeclaims<br/>custom.harvesterhci.io resources"]
+        HarvesterRBAC["RBAC: service account<br/>with VM/disk permissions<br/>(narrower scope)"]
+    end
+
+    subgraph Resources["Cluster Resources"]
+        HM["HarvesterMachine objects<br/>(Rancher management cluster)"]
+        CAPI["CAPI Machine objects<br/>(Rancher management cluster)"]
+        VM["Virtual Machine objects<br/>(Harvester infrastructure cluster)"]
+        PVC["PersistentVolumeClaims<br/>(Harvester infrastructure cluster)"]
+        DV["DataVolume objects<br/>(Harvester infrastructure cluster)"]
+    end
+
+    RancherAPI -->|visible| HM
+    RancherAPI -->|visible| CAPI
+    RancherAPI -->|NOT directly visible| VM
+    RancherAPI -->|NOT directly visible| PVC
+    HarvesterAPI -->|visible| VM
+    HarvesterAPI -->|visible| PVC
+    HarvesterAPI -->|visible| DV
+    HarvesterAPI -->|NOT visible| HM
+    HarvesterAPI -->|NOT visible| CAPI
+
+    RancherRBAC -->|cluster-admin| Rancher
+    HarvesterRBAC -->|limited SA| Harvester
+
+    style Rancher fill:#4285f4,color:#fff
+    style Harvester fill:#ff6b35,color:#fff
+    style RancherAPI fill:#90caf9,color:#000
+    style HarvesterAPI fill:#ffb74d,color:#000
+    style HM fill:#ffccbc,color:#000
+    style CAPI fill:#ffccbc,color:#000
+    style VM fill:#ffe0b2,color:#000
+    style PVC fill:#ffe0b2,color:#000
+    style DV fill:#ffe0b2,color:#000
+```
+
+**Key visibility differences:**
+
+1. **Rancher Steve API** (used by `terraform.sh destroy` cleanup)
+   - Can see HarvesterMachine, CAPI Machine, provisioning cluster resources
+   - **Cannot directly delete VMs** — only the Harvester kubeconfig can
+   - Operates on Rancher management cluster; uses `cluster-admin` or higher privileges
+   - Used by `post_destroy_cleanup()` to clear finalizers and metadata
+
+2. **Harvester kubeconfig** (direct K8s API)
+   - Can see/delete VMs, VMIs, PVCs, DataVolumes
+   - **Cannot see HarvesterMachine or CAPI resources** — those live on Rancher
+   - Uses ServiceAccount with limited VM/storage permissions
+   - Used by `nuke-cluster.sh` to force-delete stuck VMs and orphaned disks
+
+**Operational implication:**
+
+When destroying a cluster, both must be used:
+1. **Rancher API** clears finalizers on HarvesterMachine/CAPI objects
+2. **Harvester API** force-deletes orphaned VMs and disks
+
+If only one approach is used, resources will remain orphaned. This is why `destroy-cluster.sh` (which calls both via Terraform's cleanup logic) and `nuke-cluster.sh` (which handles both explicitly) both exist and may both be needed in failure scenarios.
+
+---
+
+## 11. Summary
 
 This architecture delivers a production-ready RKE2 cluster on Harvester with:
 
