@@ -162,6 +162,14 @@ resource "null_resource" "deploy_node_labeler" {
       echo "Waiting for nodes to be Ready..."
       kubectl wait --for=condition=Ready node --all --timeout=600s
 
+      # Wait for Rancher webhook to be ready — it validates namespace
+      # creation and rejects requests if its endpoints aren't available
+      echo "Waiting for Rancher webhook endpoints..."
+      until kubectl get endpoints rancher-webhook -n cattle-system -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; do
+        sleep 5
+      done
+      echo "Rancher webhook is ready."
+
       # Bootstrap workload-type labels on initial nodes (node-labeler
       # will maintain these going forward, but it needs the labels to
       # schedule in the first place)
