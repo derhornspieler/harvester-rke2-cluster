@@ -80,6 +80,27 @@ _get_tfvar_value() {
   awk -F'"' "/^${1}[[:space:]]/ {print \$2}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
 }
 
+# Extract a heredoc tfvars value (multiline, between <<-EOT and EOT).
+# Usage: _get_tfvar_heredoc private_ca_pem
+# Returns the content between the start marker and EOT.
+_get_tfvar_heredoc() {
+  local key="$1"
+  local in_block=0
+  while IFS= read -r line; do
+    if [[ "$in_block" -eq 0 && "$line" =~ ^${key}[[:space:]]*=.*EOT$ ]]; then
+      # Found start of multi-line heredoc
+      in_block=1
+      continue
+    elif [[ "$in_block" -eq 1 ]]; then
+      if [[ "$line" == "EOT" ]]; then
+        return 0
+      fi
+      echo "$line"
+    fi
+  done < "${SCRIPT_DIR}/terraform.tfvars"
+  return 0
+}
+
 check_prerequisites() {
   local missing=()
   for cmd in kubectl terraform jq curl; do
@@ -450,9 +471,9 @@ step_cleanup_orphaned_secrets_and_rbac() {
 
   # Use kubectl via Rancher API for fleet-default access (Harvester kubeconfig
   # connects to 172.16.2.2 with limited RBAC and cannot see fleet-default)
-  local RANCHER_KUBECONFIG
+  local RANCHER_KUBECONFIG=""
   RANCHER_KUBECONFIG=$(_create_rancher_kubeconfig)
-  trap 'rm -f "$RANCHER_KUBECONFIG"' RETURN
+  trap 'rm -f "${RANCHER_KUBECONFIG:-}"' RETURN
   local RKUBECTL="kubectl --kubeconfig=${RANCHER_KUBECONFIG}"
 
   # --- machine-driver-secret: ${CLUSTER_NAME}-*-machine-driver-secret ---
@@ -515,7 +536,15 @@ step_cleanup_orphaned_secrets_and_rbac() {
     done <<< "$hc_secrets"
   fi
 
-  local secret_total=$((driver_count + state_count + cert_count + hc_count))
+  # --- dockerhub-auth secret (created by rancher2_secret_v2.dockerhub_auth) ---
+  local dh_count=0
+  if $RKUBECTL get secret "${CLUSTER_NAME}-dockerhub-auth" -n fleet-default &>/dev/null; then
+    $RKUBECTL delete secret "${CLUSTER_NAME}-dockerhub-auth" -n fleet-default --wait=false 2>/dev/null || true
+    log_info "Deleted dockerhub-auth secret: ${CLUSTER_NAME}-dockerhub-auth"
+    dh_count=1
+  fi
+
+  local secret_total=$((driver_count + state_count + cert_count + hc_count + dh_count))
   if [[ "$secret_total" -gt 0 ]]; then
     log_ok "Cleaned ${secret_total} orphaned secret(s) from fleet-default"
   else
@@ -778,9 +807,9 @@ step_verify() {
   fi
 
   # Check 5: Orphaned secrets cleaned from fleet-default
-  local RANCHER_KUBECONFIG
+  local RANCHER_KUBECONFIG=""
   RANCHER_KUBECONFIG=$(_create_rancher_kubeconfig)
-  trap 'rm -f "$RANCHER_KUBECONFIG"' RETURN
+  trap 'rm -f "${RANCHER_KUBECONFIG:-}"' RETURN
   local RKUBECTL="kubectl --kubeconfig=${RANCHER_KUBECONFIG}"
 
   local orphan_driver_count orphan_state_count orphan_cert_count

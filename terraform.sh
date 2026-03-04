@@ -648,7 +648,15 @@ KUBECONFIG
       done <<< "$hc_secrets"
     fi
 
-    local secret_total=$((driver_count + state_count + cert_count + hc_count))
+    # dockerhub-auth secret (created by rancher2_secret_v2.dockerhub_auth)
+    local dh_count=0
+    if $RKUBECTL get secret "${cluster_name}-dockerhub-auth" -n fleet-default &>/dev/null; then
+      $RKUBECTL delete secret "${cluster_name}-dockerhub-auth" -n fleet-default --wait=false 2>/dev/null || true
+      log_info "Deleted dockerhub-auth secret: ${cluster_name}-dockerhub-auth"
+      dh_count=1
+    fi
+
+    local secret_total=$((driver_count + state_count + cert_count + hc_count + dh_count))
     if [[ "$secret_total" -gt 0 ]]; then
       log_ok "Cleaned ${secret_total} orphaned secret(s) from fleet-default"
     else
