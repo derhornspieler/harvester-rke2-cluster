@@ -10,7 +10,7 @@ This guide covers routine operational tasks for the RKE2 cluster deployed on Har
 4. [Certificate Rotation](#4-certificate-rotation)
 5. [Registry Mirror Management](#5-registry-mirror-management)
 6. [Backup and Recovery](#6-backup-and-recovery)
-7. [Monitoring Readiness](#7-monitoring-readiness)
+7. [Database Operator Management](#7-database-operator-management)
 8. [Clean Destroy](#8-clean-destroy)
 9. [Nuclear Cleanup](#9-nuclear-cleanup)
 10. [terraform.sh Reference](#10-terraformsh-reference)
@@ -697,7 +697,221 @@ cd cluster
 
 ---
 
-## 7. Monitoring Readiness
+## 7. Database Operator Management
+
+The cluster optionally deploys three database operators to the database worker pool. This section covers deployment, verification, and troubleshooting.
+
+### 7.1 Enabling Database Operators
+
+Database operators are configured in `terraform.tfvars`:
+
+```bash
+# Always required (gatekeeper for all operators)
+deploy_operators = true
+
+# Individual database operators
+deploy_cnpg              = true     # CloudNativePG (PostgreSQL)
+deploy_mariadb_operator  = false    # MariaDB Operator (disabled by default)
+deploy_redis_operator    = true     # OpsTree Redis Operator
+
+# Harbor credentials (required when deploy_operators = true)
+harbor_admin_user      = "admin"
+harbor_admin_password  = "your-harbor-password"
+```
+
+After modifying `terraform.tfvars`, apply the changes:
+
+```bash
+./terraform.sh apply
+```
+
+Operators are deployed in order: node-labeler → storage-autoscaler → CNPG → MariaDB → Redis.
+
+### 7.2 Verifying Operator Deployment
+
+After `terraform apply` completes, verify each operator:
+
+```bash
+# CloudNativePG
+kubectl get deployment -n cnpg-system
+kubectl get pods -n cnpg-system
+kubectl get crd | grep cnpg
+
+# MariaDB Operator
+kubectl get deployment -n mariadb-operator
+kubectl get pods -n mariadb-operator
+kubectl get crd | grep mariadb
+
+# Redis Operator
+kubectl get deployment -n redis-operator
+kubectl get pods -n redis-operator
+kubectl get crd | grep redis
+```
+
+All pods should be in `Running` state and ready. CRDs should be registered.
+
+### 7.3 Scheduling and Resource Constraints
+
+Database operators automatically schedule on the database worker pool:
+
+```bash
+# Verify nodeSelector is set
+kubectl get deployment cnpg-controller-manager -n cnpg-system -o yaml | grep -A 5 nodeSelector
+
+# Expected output:
+# nodeSelector:
+#   workload-type: database
+```
+
+Operators include HPA (Horizontal Pod Autoscaler) and PDB (Pod Disruption Budget) for high availability on the database pool.
+
+### 7.4 Adding a Database Instance
+
+Once operators are deployed, create database instances using their CRDs:
+
+**PostgreSQL via CloudNativePG:**
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: my-postgres
+  namespace: default
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: "200"
+  bootstrap:
+    initdb:
+      database: myapp
+      owner: app_user
+```
+
+**MariaDB via MariaDB Operator:**
+```yaml
+apiVersion: mariadb.mmontes.io/v1alpha1
+kind: MariaDB
+metadata:
+  name: my-mariadb
+spec:
+  replicas: 1
+  image:
+    repository: mariadb
+    tag: "11.4"
+  storage:
+    size: 10Gi
+```
+
+**Redis via OpsTree Operator:**
+```yaml
+apiVersion: redis.opstreelabs.in/v1beta2
+kind: Redis
+metadata:
+  name: my-redis
+spec:
+  kubernetesConfig:
+    replicas: 1
+  storage:
+    size: 5Gi
+```
+
+### 7.5 Operator Updates and Maintenance
+
+To update a database operator version:
+
+1. Check the current version in `operators.tf`:
+   ```bash
+   grep -A 5 "db_operators = {" operators.tf
+   ```
+
+2. Download new upstream manifests (if available) to `operators/upstream/`
+
+3. Update the version in `operators.tf`:
+   ```hcl
+   db_operators = {
+     cnpg = {
+       version = "1.29.0"  # Updated from 1.28.1
+       ...
+     }
+   }
+   ```
+
+4. Apply changes:
+   ```bash
+   ./terraform.sh apply
+   ```
+
+Terraform will redeploy the operator with the new version. Existing database instances are unaffected.
+
+### 7.6 Removing Database Operators
+
+To disable a database operator:
+
+1. Delete all instances created with that operator:
+   ```bash
+   # For CNPG clusters
+   kubectl delete cluster --all -n <namespace>
+
+   # For MariaDB instances
+   kubectl delete mariadb --all -n <namespace>
+
+   # For Redis instances
+   kubectl delete redis --all -n <namespace>
+   ```
+
+2. Set the operator flag to `false` in `terraform.tfvars`:
+   ```bash
+   deploy_cnpg              = false
+   deploy_mariadb_operator  = false
+   deploy_redis_operator    = false
+   ```
+
+3. Apply changes:
+   ```bash
+   ./terraform.sh apply
+   ```
+
+The operator namespace, CRDs, and RBAC will remain after the deployment is removed. To fully remove them, manually delete the namespace:
+```bash
+kubectl delete namespace cnpg-system
+kubectl delete namespace mariadb-operator
+kubectl delete namespace redis-operator
+```
+
+### 7.7 Troubleshooting Database Operators
+
+**Operator pod stuck in ImagePullBackOff:**
+```bash
+kubectl describe pod -n <operator-namespace> <pod-name>
+# Check Events section for registry/image pull errors
+# Verify Harbor is running and reachable via private CA cert
+```
+
+**Operator not scheduling on database nodes:**
+```bash
+# Check if database nodes exist and are Ready
+kubectl get nodes -l workload-type=database
+
+# Check pod events
+kubectl describe pod -n <operator-namespace> <pod-name>
+
+# Verify node selector matches
+kubectl get nodes --show-labels | grep workload-type
+```
+
+**CRD not registered:**
+```bash
+# Check if CRD exists
+kubectl get crd | grep operator-name
+
+# Check operator logs for CRD registration errors
+kubectl logs -n <operator-namespace> <pod-name>
+```
+
+---
+
+## 8. Monitoring Readiness
 
 RKE2 exposes Prometheus metrics by default, but no monitoring stack is deployed by Terraform. Add monitoring post-deployment.
 
@@ -731,7 +945,7 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 
 ---
 
-## 8. Clean Destroy
+## 9. Clean Destroy
 
 Use `destroy-cluster.sh` to safely destroy the cluster and all resources:
 
@@ -812,7 +1026,7 @@ kubectl --kubeconfig=./kubeconfig-harvester.yaml delete vm -n <vm_namespace> --a
 
 ---
 
-## 9. Nuclear Cleanup
+## 10. Nuclear Cleanup
 
 For complete cluster removal when `destroy-cluster.sh` fails or leaves orphaned resources, use `nuke-cluster.sh`:
 
@@ -911,7 +1125,7 @@ kubectl get harvestermachines.rke-machine.cattle.io -n fleet-default
 
 ---
 
-## 10. terraform.sh Reference
+## 11. terraform.sh Reference
 
 Wrapper script that manages Terraform state in a Kubernetes backend (stored on Harvester).
 
@@ -1090,7 +1304,7 @@ tfstate-default-rke2-cluster              # Terraform state (leased by backend)
 
 ---
 
-## 11. prepare.sh Reference
+## 12. prepare.sh Reference
 
 Standalone script for initial credential and kubeconfig setup. Does **not** require prior cluster or state.
 
@@ -1214,6 +1428,7 @@ This operations guide covers day-2 cluster management:
 - **Upgrades**: Kubernetes version, golden image, CA certificates
 - **Registries**: Adding/removing mirrors, Harbor proxy-cache configuration
 - **Backup/Recovery**: etcd snapshots, Terraform state backups, state restoration
+- **Database Operators**: CloudNativePG, MariaDB, Redis deployment and management
 - **Clean Destroy**: Safe teardown with cloud credential preservation via `destroy-cluster.sh`
 - **Nuclear Cleanup**: Complete resource removal and state wipe via `nuke-cluster.sh` (for stuck/orphaned resources)
 - **Tool Reference**: `terraform.sh` and `prepare.sh` commands and workflows
