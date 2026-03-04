@@ -25,4 +25,3 @@ resources:
 - volumeautoscaler_admin_role.yaml
 - volumeautoscaler_editor_role.yaml
 - volumeautoscaler_viewer_role.yaml
-

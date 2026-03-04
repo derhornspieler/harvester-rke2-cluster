@@ -186,12 +186,14 @@ nodeSelector:
 ## Scope Boundaries
 
 ### In Scope
+
 - Operator controller deployments (CRDs, RBAC, NetworkPolicy, Deployment, Service, HPA)
 - Terraform variable toggles per operator
 - Image push pipeline extension
 - MariaDB registry proxy-cache bug fix in lib.sh
 
 ### Out of Scope
+
 - Database instances (Cluster, MariaDB, Redis CRs) — owned by consuming services
 - Monitoring stack deployment (operators expose metrics, monitoring consumes later)
 - Golden image `registries.yaml` changes (separate effort)

@@ -1899,13 +1899,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -2154,8 +2150,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -2309,13 +2303,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -2547,8 +2537,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -2709,16 +2697,12 @@ spec:
                       of that volume
 
                       to be owned by the pod:
-
-
                       1. The owning GID will be the FSGroup
 
                       2. The setgid bit is set (new files created in the volume will
                       be owned by FSGroup)
 
                       3. The permission bits are OR''d with rw-rw----
-
-
                       If unset, the Kubelet will not modify the ownership and permissions
                       of any volume.
 
@@ -2849,8 +2833,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -3008,8 +2990,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -3318,13 +3298,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -3573,8 +3549,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -3825,8 +3799,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -4145,13 +4117,9 @@ spec:
                             in spec.resourceClaims,
 
                             that are used by this container.
-
-
                             This is an alpha field and requires enabling the
 
                             DynamicResourceAllocation feature gate.
-
-
                             This field is immutable. It can only be set for containers.'
                           items:
                             description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -4401,8 +4369,6 @@ spec:
                                 will be applied.
 
                                 Valid options are:
-
-
                                 Localhost - a profile defined in a file on the node
                                 should be used.
 
@@ -5625,8 +5591,6 @@ spec:
                                     concatenated name
 
                                     is not valid for a PVC (for example, too long).
-
-
                                     An existing PVC with that name that is not owned
                                     by the pod
 
@@ -5649,14 +5613,10 @@ spec:
                                     when
 
                                     manually reconstructing a broken cluster.
-
-
                                     This field is read-only and no changes will be
                                     made by Kubernetes
 
                                     to the PVC after it has been created.
-
-
                                     Required, must not be nil.'
                                   properties:
                                     metadata:
@@ -6490,18 +6450,12 @@ spec:
 
                                           of ClusterTrustBundle objects in an auto-updating
                                           file.
-
-
                                           Alpha, gated by the ClusterTrustBundleProjection
                                           feature gate.
-
-
                                           ClusterTrustBundle objects can either be
                                           selected by name, or by the
 
                                           combination of signer name and a label selector.
-
-
                                           Kubelet performs aggressive normalization
                                           of the PEM contents written
 
@@ -8014,13 +7968,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -8269,8 +8219,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -8424,13 +8372,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -8633,16 +8577,12 @@ spec:
                       of that volume
 
                       to be owned by the pod:
-
-
                       1. The owning GID will be the FSGroup
 
                       2. The setgid bit is set (new files created in the volume will
                       be owned by FSGroup)
 
                       3. The permission bits are OR''d with rw-rw----
-
-
                       If unset, the Kubelet will not modify the ownership and permissions
                       of any volume.
 
@@ -8773,8 +8713,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -9056,13 +8994,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -9311,8 +9245,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -10813,8 +10745,6 @@ spec:
                               in the gRPC HealthCheckRequest
 
                               (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                               If this is not specified, the default behavior is defined
                               by gRPC.'
                             type: string
@@ -11021,8 +10951,6 @@ spec:
                               in the gRPC HealthCheckRequest
 
                               (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                               If this is not specified, the default behavior is defined
                               by gRPC.'
                             type: string
@@ -11195,13 +11123,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -11450,8 +11374,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -11665,8 +11587,6 @@ spec:
 
                             be ignored. A null or empty list means only match against
                             labelSelector.
-
-
                             This is a beta field and requires the MatchLabelKeysInPodTopologySpread
                             feature gate to be enabled (enabled by default).'
                           items:
@@ -11747,8 +11667,6 @@ spec:
                             Valid values are integers greater than 0.
 
                             When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
-
-
                             For example, in a 3-zone cluster, MaxSkew is set to 2,
                             MinDomains is set to 5 and pods with the same
 
@@ -11768,8 +11686,6 @@ spec:
                             to any of the three zones,
 
                             it will violate MaxSkew.
-
-
                             This is a beta field and requires the MinDomainsInPodTopologySpread
                             feature gate to be enabled (enabled by default).'
                           format: int32
@@ -11785,8 +11701,6 @@ spec:
 
                             - Ignore: nodeAffinity/nodeSelector are ignored. All nodes
                             are included in the calculations.
-
-
                             If this value is nil, the behavior is equivalent to the
                             Honor policy.
 
@@ -11805,8 +11719,6 @@ spec:
                             has a toleration, are included.
 
                             - Ignore: node taints are ignored. All nodes are included.
-
-
                             If this value is nil, the behavior is equivalent to the
                             Ignore policy.
 
@@ -13297,8 +13209,6 @@ spec:
                               in the gRPC HealthCheckRequest
 
                               (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                               If this is not specified, the default behavior is defined
                               by gRPC.'
                             type: string
@@ -13505,8 +13415,6 @@ spec:
                               in the gRPC HealthCheckRequest
 
                               (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                               If this is not specified, the default behavior is defined
                               by gRPC.'
                             type: string
@@ -13679,13 +13587,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -13934,8 +13838,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -14149,8 +14051,6 @@ spec:
 
                             be ignored. A null or empty list means only match against
                             labelSelector.
-
-
                             This is a beta field and requires the MatchLabelKeysInPodTopologySpread
                             feature gate to be enabled (enabled by default).'
                           items:
@@ -14231,8 +14131,6 @@ spec:
                             Valid values are integers greater than 0.
 
                             When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
-
-
                             For example, in a 3-zone cluster, MaxSkew is set to 2,
                             MinDomains is set to 5 and pods with the same
 
@@ -14252,8 +14150,6 @@ spec:
                             to any of the three zones,
 
                             it will violate MaxSkew.
-
-
                             This is a beta field and requires the MinDomainsInPodTopologySpread
                             feature gate to be enabled (enabled by default).'
                           format: int32
@@ -14269,8 +14165,6 @@ spec:
 
                             - Ignore: nodeAffinity/nodeSelector are ignored. All nodes
                             are included in the calculations.
-
-
                             If this value is nil, the behavior is equivalent to the
                             Honor policy.
 
@@ -14289,8 +14183,6 @@ spec:
                             has a toleration, are included.
 
                             - Ignore: node taints are ignored. All nodes are included.
-
-
                             If this value is nil, the behavior is equivalent to the
                             Ignore policy.
 
@@ -14359,13 +14251,9 @@ spec:
                       spec.resourceClaims,
 
                       that are used by this container.
-
-
                       This is an alpha field and requires enabling the
 
                       DynamicResourceAllocation feature gate.
-
-
                       This field is immutable. It can only be set for containers.'
                     items:
                       description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -14672,13 +14560,9 @@ spec:
                             in spec.resourceClaims,
 
                             that are used by this container.
-
-
                             This is an alpha field and requires enabling the
 
                             DynamicResourceAllocation feature gate.
-
-
                             This field is immutable. It can only be set for containers.'
                           items:
                             description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -14928,8 +14812,6 @@ spec:
                                 will be applied.
 
                                 Valid options are:
-
-
                                 Localhost - a profile defined in a file on the node
                                 should be used.
 
@@ -16665,8 +16547,6 @@ spec:
                                     concatenated name
 
                                     is not valid for a PVC (for example, too long).
-
-
                                     An existing PVC with that name that is not owned
                                     by the pod
 
@@ -16689,14 +16569,10 @@ spec:
                                     when
 
                                     manually reconstructing a broken cluster.
-
-
                                     This field is read-only and no changes will be
                                     made by Kubernetes
 
                                     to the PVC after it has been created.
-
-
                                     Required, must not be nil.'
                                   properties:
                                     metadata:
@@ -17530,18 +17406,12 @@ spec:
 
                                           of ClusterTrustBundle objects in an auto-updating
                                           file.
-
-
                                           Alpha, gated by the ClusterTrustBundleProjection
                                           feature gate.
-
-
                                           ClusterTrustBundle objects can either be
                                           selected by name, or by the
 
                                           combination of signer name and a label selector.
-
-
                                           Kubelet performs aggressive normalization
                                           of the PEM contents written
 
@@ -20323,13 +20193,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -20578,8 +20444,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -20733,13 +20597,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -20971,8 +20831,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -21146,16 +21004,12 @@ spec:
                       of that volume
 
                       to be owned by the pod:
-
-
                       1. The owning GID will be the FSGroup
 
                       2. The setgid bit is set (new files created in the volume will
                       be owned by FSGroup)
 
                       3. The permission bits are OR''d with rw-rw----
-
-
                       If unset, the Kubelet will not modify the ownership and permissions
                       of any volume.
 
@@ -21286,8 +21140,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -21445,8 +21297,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -21755,13 +21605,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -22010,8 +21856,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -22262,8 +22106,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -22429,13 +22271,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -22878,13 +22716,9 @@ spec:
                             in spec.resourceClaims,
 
                             that are used by this container.
-
-
                             This is an alpha field and requires enabling the
 
                             DynamicResourceAllocation feature gate.
-
-
                             This field is immutable. It can only be set for containers.'
                           items:
                             description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -23134,8 +22968,6 @@ spec:
                                 will be applied.
 
                                 Valid options are:
-
-
                                 Localhost - a profile defined in a file on the node
                                 should be used.
 
@@ -24358,8 +24190,6 @@ spec:
                                     concatenated name
 
                                     is not valid for a PVC (for example, too long).
-
-
                                     An existing PVC with that name that is not owned
                                     by the pod
 
@@ -24382,14 +24212,10 @@ spec:
                                     when
 
                                     manually reconstructing a broken cluster.
-
-
                                     This field is read-only and no changes will be
                                     made by Kubernetes
 
                                     to the PVC after it has been created.
-
-
                                     Required, must not be nil.'
                                   properties:
                                     metadata:
@@ -25223,18 +25049,12 @@ spec:
 
                                           of ClusterTrustBundle objects in an auto-updating
                                           file.
-
-
                                           Alpha, gated by the ClusterTrustBundleProjection
                                           feature gate.
-
-
                                           ClusterTrustBundle objects can either be
                                           selected by name, or by the
 
                                           combination of signer name and a label selector.
-
-
                                           Kubelet performs aggressive normalization
                                           of the PEM contents written
 
@@ -26223,8 +26043,6 @@ spec:
 
                         be ignored. A null or empty list means only match against
                         labelSelector.
-
-
                         This is a beta field and requires the MatchLabelKeysInPodTopologySpread
                         feature gate to be enabled (enabled by default).'
                       items:
@@ -26303,8 +26121,6 @@ spec:
                         Valid values are integers greater than 0.
 
                         When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
-
-
                         For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains
                         is set to 5 and pods with the same
 
@@ -26324,8 +26140,6 @@ spec:
                         to any of the three zones,
 
                         it will violate MaxSkew.
-
-
                         This is a beta field and requires the MinDomainsInPodTopologySpread
                         feature gate to be enabled (enabled by default).'
                       format: int32
@@ -26341,8 +26155,6 @@ spec:
 
                         - Ignore: nodeAffinity/nodeSelector are ignored. All nodes
                         are included in the calculations.
-
-
                         If this value is nil, the behavior is equivalent to the Honor
                         policy.
 
@@ -26361,8 +26173,6 @@ spec:
                         has a toleration, are included.
 
                         - Ignore: node taints are ignored. All nodes are included.
-
-
                         If this value is nil, the behavior is equivalent to the Ignore
                         policy.
 
@@ -28242,13 +28052,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -28497,8 +28303,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -28652,13 +28456,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -28890,8 +28690,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -29065,16 +28863,12 @@ spec:
                       of that volume
 
                       to be owned by the pod:
-
-
                       1. The owning GID will be the FSGroup
 
                       2. The setgid bit is set (new files created in the volume will
                       be owned by FSGroup)
 
                       3. The permission bits are OR''d with rw-rw----
-
-
                       If unset, the Kubelet will not modify the ownership and permissions
                       of any volume.
 
@@ -29205,8 +28999,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -29364,8 +29156,6 @@ spec:
                           in the gRPC HealthCheckRequest
 
                           (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
-
-
                           If this is not specified, the default behavior is defined
                           by gRPC.'
                         type: string
@@ -29658,13 +29448,9 @@ spec:
                           in spec.resourceClaims,
 
                           that are used by this container.
-
-
                           This is an alpha field and requires enabling the
 
                           DynamicResourceAllocation feature gate.
-
-
                           This field is immutable. It can only be set for containers.'
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -29913,8 +29699,6 @@ spec:
                               will be applied.
 
                               Valid options are:
-
-
                               Localhost - a profile defined in a file on the node
                               should be used.
 
@@ -30288,8 +30072,6 @@ spec:
                           will be applied.
 
                           Valid options are:
-
-
                           Localhost - a profile defined in a file on the node should
                           be used.
 
@@ -30608,13 +30390,9 @@ spec:
                             in spec.resourceClaims,
 
                             that are used by this container.
-
-
                             This is an alpha field and requires enabling the
 
                             DynamicResourceAllocation feature gate.
-
-
                             This field is immutable. It can only be set for containers.'
                           items:
                             description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -30864,8 +30642,6 @@ spec:
                                 will be applied.
 
                                 Valid options are:
-
-
                                 Localhost - a profile defined in a file on the node
                                 should be used.
 
@@ -31082,8 +30858,6 @@ spec:
 
                         be ignored. A null or empty list means only match against
                         labelSelector.
-
-
                         This is a beta field and requires the MatchLabelKeysInPodTopologySpread
                         feature gate to be enabled (enabled by default).'
                       items:
@@ -31162,8 +30936,6 @@ spec:
                         Valid values are integers greater than 0.
 
                         When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
-
-
                         For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains
                         is set to 5 and pods with the same
 
@@ -31183,8 +30955,6 @@ spec:
                         to any of the three zones,
 
                         it will violate MaxSkew.
-
-
                         This is a beta field and requires the MinDomainsInPodTopologySpread
                         feature gate to be enabled (enabled by default).'
                       format: int32
@@ -31200,8 +30970,6 @@ spec:
 
                         - Ignore: nodeAffinity/nodeSelector are ignored. All nodes
                         are included in the calculations.
-
-
                         If this value is nil, the behavior is equivalent to the Honor
                         policy.
 
@@ -31220,8 +30988,6 @@ spec:
                         has a toleration, are included.
 
                         - Ignore: node taints are ignored. All nodes are included.
-
-
                         If this value is nil, the behavior is equivalent to the Ignore
                         policy.
 
@@ -31903,8 +31669,6 @@ spec:
                                 name
 
                                 is not valid for a PVC (for example, too long).
-
-
                                 An existing PVC with that name that is not owned by
                                 the pod
 
@@ -31925,14 +31689,10 @@ spec:
                                 when
 
                                 manually reconstructing a broken cluster.
-
-
                                 This field is read-only and no changes will be made
                                 by Kubernetes
 
                                 to the PVC after it has been created.
-
-
                                 Required, must not be nil.'
                               properties:
                                 metadata:
@@ -32749,18 +32509,12 @@ spec:
 
                                       of ClusterTrustBundle objects in an auto-updating
                                       file.
-
-
                                       Alpha, gated by the ClusterTrustBundleProjection
                                       feature gate.
-
-
                                       ClusterTrustBundle objects can either be selected
                                       by name, or by the
 
                                       combination of signer name and a label selector.
-
-
                                       Kubelet performs aggressive normalization of
                                       the PEM contents written
 
@@ -33832,4 +33586,3 @@ spec:
       securityContext: {}
       serviceAccount: redis-operator
       serviceAccountName: redis-operator
-

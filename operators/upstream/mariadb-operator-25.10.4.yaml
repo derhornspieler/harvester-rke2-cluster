@@ -551,7 +551,7 @@ spec:
             - containerPort: 8081
               protocol: TCP
               name: health
-          env: 
+          env:
             - name: CLUSTER_NAME
               value: cluster.local
           readinessProbe:
