@@ -375,7 +375,10 @@ post_destroy_cleanup() {
           -H "Content-Type: application/merge-patch+json" \
           "${rancher_url}/v1/rke-machine.cattle.io.harvestermachines/fleet-default/${name}" \
           -d '{"metadata":{"finalizers":[]}}' > /dev/null 2>&1 || true
-        log_info "  Patched: ${name}"
+        # Explicitly delete the HarvesterMachine after clearing finalizers
+        curl -sk -X DELETE -H "$auth_header" \
+          "${rancher_url}/v1/rke-machine.cattle.io.harvestermachines/fleet-default/${name}" > /dev/null 2>&1 || true
+        log_info "  Patched + deleted: ${name}"
       done <<< "$hm_names"
       sleep 5
     fi
@@ -650,6 +653,55 @@ KUBECONFIG
       log_ok "Cleaned ${secret_total} orphaned secret(s) from fleet-default"
     else
       log_ok "No orphaned secrets found in fleet-default"
+    fi
+
+    # --- Clean stale cloud credentials ---
+    # cmd_destroy() preserves the credential during destroy to prevent token
+    # invalidation, but old credentials accumulate across destroy/apply cycles.
+    # Safe to delete here since destroy is complete and next apply creates a fresh one.
+    local stale_creds
+    stale_creds=$(curl -sk -H "Authorization: Bearer ${rancher_token}" \
+      "${rancher_url}/v3/cloudCredentials" 2>/dev/null \
+      | jq -r ".data[] | select(.name | startswith(\"${cluster_name}\")) | .id" || true)
+
+    local cred_count=0
+    if [[ -n "$stale_creds" ]]; then
+      cred_count=$(echo "$stale_creds" | wc -l | tr -d ' ')
+      log_info "Deleting ${cred_count} stale cloud credential(s)..."
+      while IFS= read -r cred_id; do
+        [[ -z "$cred_id" ]] && continue
+        curl -sk -X DELETE -H "Authorization: Bearer ${rancher_token}" \
+          "${rancher_url}/v3/cloudCredentials/${cred_id}" >/dev/null 2>&1 || true
+      done <<< "$stale_creds"
+      log_ok "Cleaned ${cred_count} stale cloud credential(s)"
+    else
+      log_ok "No stale cloud credentials found"
+    fi
+
+    # --- Clean orphaned HarvesterConfigs ---
+    local hc_list
+    hc_list=$(curl -sk -H "Authorization: Bearer ${rancher_token}" \
+      "${rancher_url}/v1/rke-machine-config.cattle.io.harvesterconfigs/fleet-default" 2>/dev/null \
+      | jq -r ".data[]? | select(.metadata.name | startswith(\"${cluster_name}\")) | .metadata.name" || true)
+
+    local hc_cfg_count=0
+    if [[ -n "$hc_list" ]]; then
+      hc_cfg_count=$(echo "$hc_list" | wc -l | tr -d ' ')
+      log_info "Deleting ${hc_cfg_count} orphaned HarvesterConfig(s)..."
+      while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        # Clear finalizers first in case they are stuck
+        curl -sk -X PATCH -H "Authorization: Bearer ${rancher_token}" \
+          -H "Content-Type: application/merge-patch+json" \
+          "${rancher_url}/v1/rke-machine-config.cattle.io.harvesterconfigs/fleet-default/${name}" \
+          -d '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
+        curl -sk -X DELETE -H "Authorization: Bearer ${rancher_token}" \
+          "${rancher_url}/v1/rke-machine-config.cattle.io.harvesterconfigs/fleet-default/${name}" >/dev/null 2>&1 || true
+        log_info "  Deleted: ${name}"
+      done <<< "$hc_list"
+      log_ok "Cleaned ${hc_cfg_count} orphaned HarvesterConfig(s)"
+    else
+      log_ok "No orphaned HarvesterConfigs found"
     fi
 
     # --- Clean Harvester RBAC for the destroyed cluster ---
