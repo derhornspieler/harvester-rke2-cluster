@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Operator Deployment — node-labeler, storage-autoscaler, DB operators
+# Operator Deployment — node-labeler, storage-autoscaler, cluster-autoscaler, DB operators
 # -----------------------------------------------------------------------------
 # Pushes pre-built custom operator images to Harbor, then deploys all
 # operators via kubectl. Gated by var.deploy_operators (default: true).
@@ -18,6 +18,7 @@
 #       -> null_resource.deploy_cnpg                    (parallel)
 #       -> null_resource.deploy_mariadb_operator        (parallel)
 #       -> null_resource.deploy_redis_operator          (parallel)
+#       -> null_resource.deploy_cluster_autoscaler      (parallel)
 # -----------------------------------------------------------------------------
 
 locals {
@@ -44,6 +45,10 @@ locals {
       namespace = "redis-operator"
     }
   }
+
+  # Cluster autoscaler version should match the cluster's Kubernetes minor version.
+  # K8s v1.34.x -> cluster-autoscaler v1.34.x
+  cluster_autoscaler_version = "v1.34.3"
 
   operator_kubeconfig = "${path.module}/.kubeconfig-rke2-operators"
   rendered_dir        = "${path.module}/.rendered"
@@ -84,6 +89,16 @@ resource "null_resource" "operator_kubeconfig" {
         -e 's|$${version}|${local.operators["storage-autoscaler"].version}|g' \
         "${path.module}/operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
+
+      # Render cluster-autoscaler deployment template
+      sed \
+        -e 's|$${version}|${local.cluster_autoscaler_version}|g' \
+        -e 's|$${scale_down_delay_after_add}|${var.autoscaler_scale_down_delay_after_add}|g' \
+        -e 's|$${scale_down_delay_after_delete}|${var.autoscaler_scale_down_delay_after_delete}|g' \
+        -e 's|$${scale_down_unneeded_time}|${var.autoscaler_scale_down_unneeded_time}|g' \
+        -e 's|$${scale_down_utilization_threshold}|${var.autoscaler_scale_down_utilization_threshold}|g' \
+        "${path.module}/operators/templates/cluster-autoscaler-deployment.yaml.tftpl" \
+        > "${local.rendered_dir}/cluster-autoscaler-deployment.yaml"
 
       # Note: DB operator templates no longer rendered here.
       # DB operators use upstream install manifests from operators/upstream/
@@ -377,6 +392,96 @@ resource "null_resource" "deploy_redis_operator" {
 
       echo "Redis Operator deployed successfully."
     SCRIPT
+  }
+
+  depends_on = [
+    null_resource.deploy_node_labeler,
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# Deploy: Cluster Autoscaler (Rancher cloud provider)
+# -----------------------------------------------------------------------------
+# Deploys the upstream Kubernetes cluster-autoscaler with --cloud-provider=rancher.
+# The autoscaler talks to the Rancher API to adjust machine pool quantities based
+# on pod scheduling pressure and node utilization.
+#
+# Prerequisites already in place:
+#   - Machine pool annotations (autoscaler-min-size, autoscaler-max-size) in cluster.tf
+#   - Cluster-level autoscaler annotations (scale-down behavior) in cluster.tf
+#   - lifecycle.ignore_changes on worker pool quantities in cluster.tf
+#
+# The autoscaler runs on the general pool with priorityClassName system-cluster-critical
+# to prevent chicken-and-egg problems (it must be running to trigger scale-up).
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "deploy_cluster_autoscaler" {
+  count = var.deploy_operators && var.deploy_cluster_autoscaler ? 1 : 0
+
+  triggers = {
+    cluster_id = rancher2_cluster_v2.rke2.id
+    version    = local.cluster_autoscaler_version
+  }
+
+  provisioner "local-exec" {
+    command = <<-SCRIPT
+      set -euo pipefail
+      export KUBECONFIG="${local.operator_kubeconfig}"
+
+      echo "Waiting for nodes to be Ready..."
+      kubectl wait --for=condition=Ready node --all --timeout=600s
+
+      echo "Deploying cluster-autoscaler ${local.cluster_autoscaler_version}..."
+
+      # Apply static manifests (namespace, rbac, service, pdb, networkpolicy)
+      for f in namespace.yaml rbac.yaml service.yaml pdb.yaml networkpolicy.yaml; do
+        kubectl apply -f "${path.module}/operators/manifests/cluster-autoscaler/$f"
+      done
+
+      # Write cloud-config and CA cert to rendered directory (avoids shell
+      # escaping issues with multiline data inside Terraform local-exec).
+      # These are passed via environment variables from Terraform.
+      printf '%s\n' "$CLOUD_CONFIG" > "${local.rendered_dir}/cluster-autoscaler-cloud-config"
+      printf '%s\n' "$CA_CERT" > "${local.rendered_dir}/cluster-autoscaler-ca-cert.pem"
+
+      # Create cloud-config secret for Rancher API access.
+      # The autoscaler uses this to authenticate with Rancher and adjust
+      # machine pool quantities on the provisioning.cattle.io cluster resource.
+      kubectl create secret generic cluster-autoscaler-cloud-config \
+        -n cluster-autoscaler \
+        --from-file=cloud-config="${local.rendered_dir}/cluster-autoscaler-cloud-config" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      # Create CA cert secret for Rancher TLS verification.
+      # The private CA is needed because Rancher uses an internal CA.
+      kubectl create secret generic cluster-autoscaler-ca-cert \
+        -n cluster-autoscaler \
+        --from-file=ca.crt="${local.rendered_dir}/cluster-autoscaler-ca-cert.pem" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      # Clean up sensitive files immediately after creating secrets
+      rm -f "${local.rendered_dir}/cluster-autoscaler-cloud-config" \
+            "${local.rendered_dir}/cluster-autoscaler-ca-cert.pem"
+
+      # Apply rendered deployment (with correct image version and scale-down params)
+      kubectl apply -f "${local.rendered_dir}/cluster-autoscaler-deployment.yaml"
+
+      # Wait for rollout to complete
+      kubectl rollout status deployment/cluster-autoscaler \
+        -n cluster-autoscaler --timeout=300s
+
+      echo "cluster-autoscaler deployed successfully."
+    SCRIPT
+
+    environment = {
+      CLOUD_CONFIG = join("\n", [
+        "url: ${var.rancher_url}",
+        "token: ${var.rancher_token}",
+        "clusterName: ${var.cluster_name}",
+        "clusterNamespace: fleet-default",
+      ])
+      CA_CERT = var.private_ca_pem
+    }
   }
 
   depends_on = [

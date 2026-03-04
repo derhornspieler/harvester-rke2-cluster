@@ -394,7 +394,13 @@ variable "bootstrap_registry_ca_pem" {
 # -----------------------------------------------------------------------------
 
 variable "deploy_operators" {
-  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, and optionally DB operators)"
+  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, cluster-autoscaler, and optionally DB operators)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_cluster_autoscaler" {
+  description = "Deploy Kubernetes cluster-autoscaler with Rancher cloud provider (requires deploy_operators = true)"
   type        = bool
   default     = true
 }

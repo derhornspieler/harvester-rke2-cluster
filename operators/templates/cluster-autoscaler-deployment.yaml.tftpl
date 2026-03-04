@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: cluster-autoscaler
+  labels:
+    app.kubernetes.io/name: cluster-autoscaler
+    app.kubernetes.io/version: "${version}"
+    app.kubernetes.io/managed-by: terraform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-autoscaler
+        app.kubernetes.io/version: "${version}"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8085"
+        # Prevent the autoscaler from evicting itself during scale-down
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      serviceAccountName: cluster-autoscaler
+      # Run on general pool (not the pools being autoscaled to avoid
+      # chicken-and-egg: autoscaler must be running to scale up new nodes)
+      nodeSelector:
+        workload-type: general
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cluster-autoscaler
+      tolerations:
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 60
+      # High priority so the autoscaler is not preempted
+      priorityClassName: system-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cluster-autoscaler
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:${version}
+          command:
+            - /cluster-autoscaler
+          args:
+            - --cloud-provider=rancher
+            - --cloud-config=/config/cloud-config
+            - --namespace=cluster-autoscaler
+            # Scale-down behavior (mirrors cluster-level annotations for
+            # defense-in-depth; the annotations take priority if set)
+            - --scale-down-delay-after-add=${scale_down_delay_after_add}
+            - --scale-down-delay-after-delete=${scale_down_delay_after_delete}
+            - --scale-down-unneeded-time=${scale_down_unneeded_time}
+            - --scale-down-utilization-threshold=${scale_down_utilization_threshold}
+            # Safety: never scale below PDB minimums
+            - --skip-nodes-with-local-storage=false
+            - --balance-similar-node-groups=true
+            # Leader election for HA (2 replicas)
+            - --leader-elect=true
+            - --leader-elect-lease-duration=15s
+            - --leader-elect-renew-deadline=10s
+            - --leader-elect-retry-period=2s
+            # Logging
+            - --v=4
+            - --stderrthreshold=info
+            - --logtostderr=true
+          ports:
+            - name: metrics
+              containerPort: 8085
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health-check
+              port: 8085
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health-check
+              port: 8085
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /config
+              readOnly: true
+            - name: ca-cert
+              mountPath: /etc/ssl/certs/rancher-ca.pem
+              subPath: ca.crt
+              readOnly: true
+          env:
+            # Trust the private CA for Rancher API TLS
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/rancher-ca.pem
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: cloud-config
+          secret:
+            secretName: cluster-autoscaler-cloud-config
+        - name: ca-cert
+          secret:
+            secretName: cluster-autoscaler-ca-cert
