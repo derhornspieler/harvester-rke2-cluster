@@ -11,10 +11,11 @@ This guide covers routine operational tasks for the RKE2 cluster deployed on Har
 5. [Registry Mirror Management](#5-registry-mirror-management)
 6. [Backup and Recovery](#6-backup-and-recovery)
 7. [Database Operator Management](#7-database-operator-management)
-8. [Clean Destroy](#9-clean-destroy)
-9. [Nuclear Cleanup](#10-nuclear-cleanup)
-10. [terraform.sh Reference](#11-terraformsh-reference)
-11. [prepare.sh Reference](#12-preparesh-reference)
+8. [Monitoring Readiness](#8-monitoring-readiness)
+9. [Clean Destroy](#9-clean-destroy)
+10. [Nuclear Cleanup](#10-nuclear-cleanup)
+11. [terraform.sh Reference](#11-terraformsh-reference)
+12. [prepare.sh Reference](#12-preparesh-reference)
 
 ---
 
