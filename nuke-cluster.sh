@@ -434,15 +434,20 @@ step_cleanup_rancher_resources() {
     log_ok "No Fleet bundles found"
   fi
 
-  # --- Cloud credentials (preserved for reuse across destroy/recreate cycles) ---
+  # --- Cloud credentials (nuclear = delete all, next apply creates fresh) ---
   local cloud_creds
   cloud_creds=$(rancher_api GET "/v3/cloudCredentials" \
-    | jq -r ".data[]? | select(.name | test(\"${CLUSTER_NAME}\")) | .id" 2>/dev/null || true)
+    | jq -r ".data[]? | select(.name | startswith(\"${CLUSTER_NAME}\")) | .id" 2>/dev/null || true)
 
   if [[ -n "$cloud_creds" ]]; then
     local cc_count
     cc_count=$(echo "$cloud_creds" | wc -l | tr -d ' ')
-    log_ok "Preserving ${cc_count} cloud credential(s) (reusable across cycles)"
+    log_info "Deleting ${cc_count} cloud credential(s)..."
+    while IFS= read -r cred_id; do
+      [[ -z "$cred_id" ]] && continue
+      rancher_api DELETE "/v3/cloudCredentials/${cred_id}" > /dev/null 2>&1 || true
+    done <<< "$cloud_creds"
+    log_ok "Deleted ${cc_count} cloud credential(s)"
   else
     log_ok "No cloud credentials found"
   fi
@@ -795,15 +800,16 @@ step_verify() {
     all_passed=false
   fi
 
-  # Check 4: Cloud credentials preserved (not deleted)
+  # Check 4: Cloud credentials cleaned
   local cc_count
   cc_count=$(rancher_api GET "/v3/cloudCredentials" \
-    | jq -r "[.data[]? | select(.name | test(\"${CLUSTER_NAME}\"))] | length" 2>/dev/null || echo "0")
+    | jq -r "[.data[]? | select(.name | startswith(\"${CLUSTER_NAME}\"))] | length" 2>/dev/null || echo "0")
 
-  if [[ "$cc_count" -gt 0 ]]; then
-    CHECK_RESULTS["Cloud credentials preserved"]="PASS (${cc_count} kept)"
+  if [[ "$cc_count" -eq 0 ]]; then
+    CHECK_RESULTS["Cloud credentials cleaned"]="PASS"
   else
-    CHECK_RESULTS["Cloud credentials preserved"]="WARN (0 found — may need recreation)"
+    CHECK_RESULTS["Cloud credentials cleaned"]="FAIL (${cc_count} remaining)"
+    all_passed=false
   fi
 
   # Check 5: Orphaned secrets cleaned from fleet-default
@@ -946,7 +952,7 @@ main() {
     echo -e "  - RBAC:      ClusterRoleBindings, ServiceAccounts for the cluster"
     echo -e "  - State:     ALL resources from Terraform state"
     echo -e "  - Rancher:   HarvesterConfigs, Fleet bundles"
-    echo -e "  - Preserved: Cloud credentials (reusable across cycles)"
+    echo -e "  - Deleted: Cloud credentials (next apply creates fresh)"
     echo
     echo -e "${RED}This action is IRREVERSIBLE.${NC}"
     echo
