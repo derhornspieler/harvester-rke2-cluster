@@ -315,7 +315,7 @@ variable "harbor_fqdn" {
 variable "harbor_registry_mirrors" {
   description = "Upstream container registries to mirror through Harbor proxy-cache"
   type        = list(string)
-  default     = ["docker.io", "quay.io", "ghcr.io", "gcr.io", "registry.k8s.io", "docker.elastic.co", "registry.gitlab.com", "docker-registry3.mariadb.com"]
+  default     = ["docker.io", "quay.io", "ghcr.io", "gcr.io", "registry.k8s.io", "docker.elastic.co", "registry.gitlab.com", "docker-registry1.mariadb.com", "docker-registry2.mariadb.com", "docker-registry3.mariadb.com"]
 
   validation {
     condition     = alltrue([for m in var.harbor_registry_mirrors : can(regex("^[a-z0-9][a-z0-9.-]+[a-z0-9]$", m))])
@@ -394,7 +394,25 @@ variable "bootstrap_registry_ca_pem" {
 # -----------------------------------------------------------------------------
 
 variable "deploy_operators" {
-  description = "Deploy node-labeler and storage-autoscaler after cluster creation"
+  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, and optionally DB operators)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_cnpg" {
+  description = "Deploy CloudNativePG operator (requires deploy_operators = true)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_mariadb_operator" {
+  description = "Deploy MariaDB Operator (requires deploy_operators = true)"
+  type        = bool
+  default     = false
+}
+
+variable "deploy_redis_operator" {
+  description = "Deploy OpsTree Redis Operator (requires deploy_operators = true)"
   type        = bool
   default     = true
 }

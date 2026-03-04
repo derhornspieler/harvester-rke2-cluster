@@ -1,0 +1,167 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: mariadb-operator-validating-webhook
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+webhooks:
+  - name: vbackup-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-backup
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["backups"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vconnection-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-connection
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["connections"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vdatabase-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-database
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["databases"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vgrant-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-grant
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["grants"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vmariadb-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-mariadb
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["mariadbs"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vmaxscale-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-maxscale
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["maxscales"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vphysicalbackup-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-physicalbackup
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["physicalbackups"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vrestore-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-restore
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["restores"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vsqljob-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-sqljob
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sqljobs"]
+    failurePolicy: Fail
+    sideEffects: None
+  - name: vuser-v1alpha1.kb.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-user
+        port: 443
+      caBundle: ""
+    rules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["users"]
+    failurePolicy: Fail
+    sideEffects: None

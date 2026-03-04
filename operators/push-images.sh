@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# push-images.sh — Push pre-built OCI image tarballs to Harbor via crane
+# push-images.sh — Push custom operator images to Harbor via crane
+#
+# Pushes pre-built OCI tarballs from IMAGES_DIR to Harbor's library project.
+# Used for custom operators (node-labeler, storage-autoscaler) that are built
+# locally and shipped as tar.gz archives. DB operators (CNPG, MariaDB, Redis)
+# use upstream image references directly and are rewritten via registries.yaml.
 #
 # Required environment variables:
 #   HARBOR_FQDN      Harbor registry hostname (e.g., harbor.example.com)
@@ -68,61 +73,69 @@ crane auth login "${HARBOR_FQDN}" \
   --password "${HARBOR_PASSWORD}" \
   "${CRANE_TLS_FLAGS[@]}"
 
-# Count images
-PUSHED=0
-SKIPPED=0
-FAILED=0
+# ---------------------------------------------------------------------------
+# push_local_images — Push pre-built OCI tarballs from IMAGES_DIR
+# ---------------------------------------------------------------------------
+push_local_images() {
+  local pushed=0 skipped=0 failed=0
 
-if ! compgen -G "${IMAGES_DIR}/*.tar.gz" >/dev/null 2>&1; then
-  echo "WARNING: No *.tar.gz files found in ${IMAGES_DIR}" >&2
-  exit 0
-fi
-
-for tarball in "${IMAGES_DIR}"/*.tar.gz; do
-  filename="$(basename "${tarball}")"
-
-  # Parse name and version from filename
-  # Expected format: <name>-<version>-<arch>.tar.gz
-  # e.g., node-labeler-v0.2.0-amd64.tar.gz
-  # The version starts with 'v', so we split on '-v' to get name and the rest
-  if [[ ! "${filename}" =~ ^(.+)-(v[0-9][0-9a-zA-Z._-]*)-([a-z0-9]+)\.tar\.gz$ ]]; then
-    echo "WARNING: Skipping ${filename} — does not match naming convention <name>-<version>-<arch>.tar.gz" >&2
-    continue
+  if ! compgen -G "${IMAGES_DIR}/*.tar.gz" >/dev/null 2>&1; then
+    echo "WARNING: No *.tar.gz files found in ${IMAGES_DIR}" >&2
+    return 0
   fi
 
-  IMAGE_NAME="${BASH_REMATCH[1]}"
-  IMAGE_TAG="${BASH_REMATCH[2]}"
-  FULL_REF="${HARBOR_FQDN}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
+  for tarball in "${IMAGES_DIR}"/*.tar.gz; do
+    local filename
+    filename="$(basename "${tarball}")"
 
-  # Idempotency check — skip if image already exists in Harbor
-  if crane manifest "${FULL_REF}" "${CRANE_TLS_FLAGS[@]}" &>/dev/null; then
-    echo "SKIP: ${FULL_REF} already exists"
-    SKIPPED=$((SKIPPED + 1))
-    continue
-  fi
-
-  echo "PUSH: ${filename} -> ${FULL_REF}"
-
-  # Extract OCI layout to temp dir and push
-  IMG_TMPDIR="$(mktemp -d)"
-  if tar -xzf "${tarball}" -C "${IMG_TMPDIR}" 2>/dev/null; then
-    if crane push "${IMG_TMPDIR}" "${FULL_REF}" "${CRANE_TLS_FLAGS[@]}"; then
-      PUSHED=$((PUSHED + 1))
-    else
-      echo "ERROR: Failed to push ${FULL_REF}" >&2
-      FAILED=$((FAILED + 1))
+    # Parse name and version from filename
+    # Expected format: <name>-<version>-<arch>.tar.gz
+    # e.g., node-labeler-v0.2.0-amd64.tar.gz
+    # The version starts with 'v', so we split on '-v' to get name and the rest
+    if [[ ! "${filename}" =~ ^(.+)-(v[0-9][0-9a-zA-Z._-]*)-([a-z0-9]+)\.tar\.gz$ ]]; then
+      echo "WARNING: Skipping ${filename} — does not match naming convention <name>-<version>-<arch>.tar.gz" >&2
+      continue
     fi
-  else
-    echo "ERROR: Failed to extract ${tarball}" >&2
-    FAILED=$((FAILED + 1))
+
+    local image_name="${BASH_REMATCH[1]}"
+    local image_tag="${BASH_REMATCH[2]}"
+    local full_ref="${HARBOR_FQDN}/${HARBOR_PROJECT}/${image_name}:${image_tag}"
+
+    # Idempotency check — skip if image already exists in Harbor
+    if crane manifest "${full_ref}" "${CRANE_TLS_FLAGS[@]}" &>/dev/null; then
+      echo "SKIP: ${full_ref} already exists"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    echo "PUSH: ${filename} -> ${full_ref}"
+
+    # Extract OCI layout to temp dir and push
+    IMG_TMPDIR="$(mktemp -d)"
+    if tar -xzf "${tarball}" -C "${IMG_TMPDIR}" 2>/dev/null; then
+      if crane push "${IMG_TMPDIR}" "${full_ref}" "${CRANE_TLS_FLAGS[@]}"; then
+        pushed=$((pushed + 1))
+      else
+        echo "ERROR: Failed to push ${full_ref}" >&2
+        failed=$((failed + 1))
+      fi
+    else
+      echo "ERROR: Failed to extract ${tarball}" >&2
+      failed=$((failed + 1))
+    fi
+    rm -rf "${IMG_TMPDIR}"
+    IMG_TMPDIR=""
+  done
+
+  echo ""
+  echo "Local images: ${pushed} pushed, ${skipped} skipped, ${failed} failed"
+  if [[ "${failed}" -gt 0 ]]; then
+    return 1
   fi
-  rm -rf "${IMG_TMPDIR}"
-  IMG_TMPDIR=""
-done
+  return 0
+}
 
-echo ""
-echo "Image push complete: ${PUSHED} pushed, ${SKIPPED} skipped, ${FAILED} failed"
-
-if [[ "${FAILED}" -gt 0 ]]; then
-  exit 1
-fi
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+push_local_images
