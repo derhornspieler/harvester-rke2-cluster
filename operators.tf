@@ -274,7 +274,7 @@ resource "null_resource" "deploy_cnpg" {
   }
 
   depends_on = [
-    null_resource.operator_kubeconfig,
+    null_resource.deploy_node_labeler,
   ]
 }
 
@@ -307,7 +307,8 @@ resource "null_resource" "deploy_mariadb_operator" {
       kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-crds-${local.db_operators["mariadb-operator"].version}.yaml"
 
       # Apply upstream Helm-rendered manifest (RBAC, Deployment, cert-controller, webhook)
-      kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
+      # Note: -n flag needed because helm template doesn't embed namespace in all resources
+      kubectl apply --server-side -n mariadb-operator -f "${path.module}/operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
 
       # Patch deployments to schedule on database pool nodes
       for deploy in mariadb-operator mariadb-operator-cert-controller; do
@@ -329,7 +330,7 @@ resource "null_resource" "deploy_mariadb_operator" {
   }
 
   depends_on = [
-    null_resource.operator_kubeconfig,
+    null_resource.deploy_node_labeler,
   ]
 }
 
@@ -359,7 +360,7 @@ resource "null_resource" "deploy_redis_operator" {
       kubectl create namespace redis-operator --dry-run=client -o yaml | kubectl apply -f -
 
       # Apply upstream Helm-rendered manifest (CRDs, RBAC, Deployment)
-      kubectl apply --server-side -f "${path.module}/operators/upstream/redis-operator-${local.db_operators["redis-operator"].version}.yaml"
+      kubectl apply --server-side -n redis-operator -f "${path.module}/operators/upstream/redis-operator-${local.db_operators["redis-operator"].version}.yaml"
 
       # Patch deployment to schedule on database pool nodes
       kubectl patch deployment redis-operator -n redis-operator --type=json \
@@ -379,6 +380,6 @@ resource "null_resource" "deploy_redis_operator" {
   }
 
   depends_on = [
-    null_resource.operator_kubeconfig,
+    null_resource.deploy_node_labeler,
   ]
 }
