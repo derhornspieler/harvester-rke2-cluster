@@ -110,6 +110,9 @@ graph TD
 
     J1["10a. Deploy: node-labeler<br/>(null_resource.deploy_node_labeler)"]
     J2["10b. Deploy: storage-autoscaler<br/>(null_resource.deploy_storage_autoscaler)"]
+    J3["10c. Deploy: CloudNativePG<br/>(null_resource.deploy_cnpg)"]
+    J4["10d. Deploy: MariaDB Operator<br/>(null_resource.deploy_mariadb_operator)"]
+    J5["10e. Deploy: Redis Operator<br/>(null_resource.deploy_redis_operator)"]
 
     A --> B
     B --> C
@@ -131,6 +134,9 @@ graph TD
     H --> I
     I --> J1
     I --> J2
+    J1 --> J3
+    J1 --> J4
+    J1 --> J5
 
     style A fill:#e1f5ff
     style B fill:#e1f5ff
@@ -148,6 +154,10 @@ graph TD
     style H fill:#fff9c4
     style I fill:#fff9c4
     style J1 fill:#ffe0b2
+    style J2 fill:#ffe0b2
+    style J3 fill:#c8e6c9
+    style J4 fill:#c8e6c9
+    style J5 fill:#c8e6c9
     style J2 fill:#ffe0b2
 ```
 
@@ -585,28 +595,48 @@ graph TD
 
 ## 9. Operator Deployment
 
-Two custom Kubernetes operators are optionally deployed after cluster creation:
+Terraform optionally deploys five operators after cluster creation, organized into two categories:
 
-### node-labeler (v0.2.0)
+### Custom Operators (Always Deployed Together)
 
-Watches Harvester VM annotations and syncs them to Kubernetes node labels. Enables workload affinity based on VM properties.
+**node-labeler (v0.2.0)**: Watches Harvester VM annotations and syncs them to Kubernetes node labels. Enables workload affinity based on VM properties.
 
-### storage-autoscaler (v0.2.0)
+**storage-autoscaler (v0.2.0)**: Monitors Harvester VM disk usage and automatically expands PersistentVolumes on nodes near capacity.
 
-Monitors Harvester VM disk usage and automatically expands PersistentVolumes on nodes near capacity.
-
-**Deployment flow:**
+Deployment flow for custom operators:
 1. Operator images built from source (must exist in `operators/images/`)
 2. Terraform runs `push-images.sh` via `null_resource.operator_image_push`
 3. Images pushed to Harbor via `crane` CLI
 4. Manifests rendered from `operators/templates/` via `templatefile()` function
 5. Operators deployed via kubectl using RKE2 kubeconfig
 
-**Operator images:**
+Operator images:
 - Image tarballs are NOT committed to git
 - To deploy operators, build images from source in `operators/` directory
 - Place tarballs in `operators/images/` before `terraform apply`
-- If `deploy_operators = false`, operators are not deployed
+- If `deploy_operators = false`, neither custom nor DB operators are deployed
+
+### Database Operators (Individually Configurable)
+
+**CloudNativePG (v1.28.1)**: PostgreSQL operator supporting high-availability clusters, backups, and connection pooling. Deploys to `cnpg-system` namespace. Enabled by `var.deploy_cnpg` (default: `true`).
+
+**MariaDB Operator (v25.10.4)**: MariaDB/MaxScale operator supporting multi-instance replication and automated backups. Deploys to `mariadb-operator` namespace. Enabled by `var.deploy_mariadb_operator` (default: `false`).
+
+**OpsTree Redis Operator (v0.23.0)**: Redis operator supporting standalone, cluster, and Sentinel deployments. Deploys to `redis-operator` namespace. Enabled by `var.deploy_redis_operator` (default: `true`).
+
+Deployment flow for database operators:
+1. Upstream install manifests stored in `operators/upstream/` (pre-rendered from official Helm charts)
+2. Manifests applied via kubectl with `--server-side` for proper CRD handling
+3. Deployments patched to schedule on database worker pool via `nodeSelector: workload-type=database`
+4. Custom additions (NetworkPolicy, HPA, PDB) applied from `operators/manifests/<operator-name>/`
+5. Rollout verified via `kubectl rollout status`
+
+Database operator characteristics:
+- Use upstream container images directly (ghcr.io, quay.io references)
+- RKE2 `registries.yaml` transparently rewrites pulls to Harbor proxy-cache
+- No local image tarballs required (unlike custom operators)
+- Each operator has an independent feature flag
+- All require `deploy_operators = true` to function
 
 ---
 
@@ -690,6 +720,7 @@ This architecture delivers a production-ready RKE2 cluster on Harvester with:
 - **Scalability**: Autoscaling pools, scale-from-zero for compute workloads
 - **Networking**: Cilium CNI with L2 LB, dual-NIC separation of cluster/ingress traffic
 - **Air-gap**: Bootstrap registry + Harbor proxy-cache isolation from public internet
+- **Database Support**: Optional operators for PostgreSQL (CNPG), MariaDB, and Redis on database worker pool
 - **Observability**: Cluster autoscaler, node-labeler, storage-autoscaler custom operators
 - **Security**: Private CA trust chain, node encryption, service account RBAC
 

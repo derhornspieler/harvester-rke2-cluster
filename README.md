@@ -14,7 +14,7 @@ This Terraform module orchestrates the creation of a fully managed RKE2 cluster 
 - Sets up Traefik as the ingress controller with static LoadBalancer IP
 - Integrates Harbor as a pull-through registry cache (8 upstream registries)
 - Deploys custom operators: node-labeler and storage-autoscaler
-- Deploys database operators: CloudNativePG (PostgreSQL), MariaDB Operator, OpsTree Redis Operator
+- Optionally deploys database operators: CloudNativePG (PostgreSQL), MariaDB, OpsTree Redis
 
 ## Architecture
 
@@ -216,7 +216,11 @@ All configuration is managed via `terraform.tfvars`. See `terraform.tfvars.examp
 | `harvester_cloud_provider_kubeconfig_path` | string | Yes | — | Path to Harvester cloud provider kubeconfig |
 | `ssh_user` | string | No | `rocky` | SSH user for cloud image access |
 | `ssh_authorized_keys` | list(string) | Yes | — | SSH public keys for node access |
-| `deploy_operators` | bool | No | `true` | Deploy node-labeler and storage-autoscaler |
+| `deploy_operators` | bool | No | `true` | Deploy node-labeler, storage-autoscaler, and optionally DB operators |
+| `deploy_cnpg` | bool | No | `true` | Deploy CloudNativePG operator (requires `deploy_operators = true`) |
+| `deploy_mariadb_operator` | bool | No | `false` | Deploy MariaDB Operator (requires `deploy_operators = true`) |
+| `deploy_redis_operator` | bool | No | `true` | Deploy OpsTree Redis Operator (requires `deploy_operators = true`) |
+| `harbor_admin_user` | string | No | `admin` | Harbor username for pushing operator images |
 | `harbor_admin_password` | string | No | — | Harbor admin password (required if `deploy_operators = true`) |
 
 ## Cluster Architecture
@@ -346,17 +350,38 @@ Terraform optionally deploys cluster infrastructure operators after creation:
 
 ### Database Operators
 
-**CloudNativePG (v1.28.1)**: PostgreSQL operator supporting high-availability clusters, backups, and connection pooling.
+Three optional database operators can be deployed to the database worker pool:
 
-**MariaDB Operator (v25.10.4)**: MariaDB/MaxScale operator supporting multi-instance replication and automated backups.
+**CloudNativePG (v1.28.1)**: PostgreSQL operator supporting high-availability clusters, backups, and connection pooling. Deployed to `cnpg-system` namespace.
 
-**OpsTree Redis Operator (v0.23.0)**: Redis operator supporting standalone, cluster, and Sentinel deployments.
+**MariaDB Operator (v25.10.4)**: MariaDB/MaxScale operator supporting multi-instance replication and automated backups. Deployed to `mariadb-operator` namespace.
 
-Database operators run on the database worker pool. They reference upstream container images directly via the Harbor registry proxy-cache (no local image tarballs required).
+**OpsTree Redis Operator (v0.23.0)**: Redis operator supporting standalone, cluster, and Sentinel deployments. Deployed to `redis-operator` namespace.
 
-**Deployment** (database operators):
-- Set `deploy_cnpg = true`, `deploy_mariadb_operator = true`, and `deploy_redis_operator = true` in `terraform.tfvars`
-- Run `terraform apply` (manifests are automatically applied)
+**Key details:**
+- Each database operator has an independent feature flag: `deploy_cnpg`, `deploy_mariadb_operator`, `deploy_redis_operator`
+- All require `deploy_operators = true` to be enabled
+- Operators automatically schedule on database worker nodes via `nodeSelector: workload-type=database`
+- Upstream install manifests are stored in `operators/upstream/` and applied via kubectl
+- Custom additions (NetworkPolicy, HPA, PDB) are deployed from `operators/manifests/<operator-name>/`
+
+**Deployment (database operators):**
+1. Set desired operators in `terraform.tfvars`:
+   ```hcl
+   deploy_operators         = true
+   deploy_cnpg              = true
+   deploy_mariadb_operator  = false    # Or true if needed
+   deploy_redis_operator    = true
+   ```
+
+2. Run `terraform apply` (manifests are automatically applied)
+
+3. Verify deployment:
+   ```bash
+   kubectl get deployment -n cnpg-system
+   kubectl get deployment -n mariadb-operator
+   kubectl get deployment -n redis-operator
+   ```
 
 ## Credential Management
 
@@ -616,6 +641,14 @@ kubectl rollout restart -n kube-system ds/cilium
 │   │   ├── node-labeler-deployment.yaml.tftpl
 │   │   └── storage-autoscaler-deployment.yaml.tftpl
 │   ├── manifests/                     # Kubernetes manifests
+│   │   ├── node-labeler/              # node-labeler static manifests
+│   │   ├── storage-autoscaler/        # storage-autoscaler static manifests
+│   │   ├── cnpg-system/               # CNPG additions (NetworkPolicy, HPA, PDB)
+│   │   ├── mariadb-operator/          # MariaDB additions
+│   │   └── redis-operator/            # Redis additions
+│   ├── upstream/                      # DB operator install manifests (helm-rendered)
+│   ├── node-labeler/                  # node-labeler source code
+│   ├── storage-autoscaler/            # storage-autoscaler source code
 │   └── push-images.sh                 # Pushes images to Harbor via crane
 │
 ├── .gitignore                         # Excludes secrets, state, tarballs
