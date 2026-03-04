@@ -53,13 +53,24 @@ Usage: $(basename "$0") [OPTIONS]
 Prepare credentials and kubeconfigs for RKE2 cluster deployment on Harvester.
 
 Options:
-  -h, --help    Show this help message and exit
+  -h, --help                Show this help message and exit
+  -r, --refresh-credentials Refresh only credentials and kubeconfigs without
+                            touching other terraform.tfvars values. Requires an
+                            existing terraform.tfvars (falls back to full setup
+                            if missing).
 
-This script will:
-  1. Verify prerequisites (curl, kubectl, jq, python3)
-  2. Authenticate to Rancher and create a permanent API token
-  3. Generate Harvester kubeconfigs (management, cloud credential, cloud provider)
-  4. Create terraform.tfvars from terraform.tfvars.example with discovered values
+Modes:
+  Full setup (default):
+    1. Verify prerequisites (curl, kubectl, jq, python3)
+    2. Authenticate to Rancher and create a permanent API token
+    3. Generate Harvester kubeconfigs (management, cloud credential, cloud provider)
+    4. Create terraform.tfvars from terraform.tfvars.example with discovered values
+
+  Credential refresh (--refresh-credentials):
+    1. Read cluster settings from existing terraform.tfvars
+    2. Prompt only for Rancher username and password
+    3. Regenerate API token and all 3 kubeconfigs
+    4. Update only rancher_token and harvester_cloud_credential_name in terraform.tfvars
 
 All generated files are written to: ${SCRIPT_DIR}/
 
@@ -75,7 +86,14 @@ EOF
   exit 0
 }
 
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
+# -----------------------------------------------------------------------------
+# Read a simple key = "value" from terraform.tfvars
+# Same pattern as _get_tfvar_value in terraform.sh / nuke-cluster.sh.
+# -----------------------------------------------------------------------------
+read_tfvar() {
+  local key="$1"
+  awk -F'"' "/^${key}[[:space:]]/ {print \$2}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
+}
 
 # -----------------------------------------------------------------------------
 # Prompt helpers
@@ -143,6 +161,7 @@ rancher_api() {
 # Prerequisites
 # -----------------------------------------------------------------------------
 check_prerequisites() {
+  local require_example="${1:-true}"
   log_info "Checking prerequisites..."
   local missing=()
   for cmd in curl kubectl jq python3; do
@@ -153,7 +172,7 @@ check_prerequisites() {
   if [[ ${#missing[@]} -gt 0 ]]; then
     die "Missing required commands: ${missing[*]}"
   fi
-  if [[ ! -f "${SCRIPT_DIR}/terraform.tfvars.example" ]]; then
+  if [[ "${require_example}" == true && ! -f "${SCRIPT_DIR}/terraform.tfvars.example" ]]; then
     die "terraform.tfvars.example not found in ${SCRIPT_DIR}"
   fi
   log_ok "All prerequisites met"
@@ -388,15 +407,140 @@ print_summary() {
 }
 
 # -----------------------------------------------------------------------------
-# Main
+# Refresh summary (credential refresh mode only)
 # -----------------------------------------------------------------------------
-main() {
+print_refresh_summary() {
   echo ""
   echo -e "${BOLD}${BLUE}============================================================${NC}"
-  echo -e "${BOLD}${BLUE}  RKE2 Cluster — Credential Preparation${NC}"
+  echo -e "${BOLD}${BLUE}  Credential Refresh Complete${NC}"
   echo -e "${BOLD}${BLUE}============================================================${NC}"
   echo ""
 
+  echo -e "${BOLD}Files regenerated:${NC}"
+  for f in kubeconfig-harvester.yaml kubeconfig-harvester-cloud-cred.yaml \
+           harvester-cloud-provider-kubeconfig; do
+    if [[ -f "${SCRIPT_DIR}/${f}" ]]; then
+      echo -e "  ${GREEN}+${NC} ${f}"
+    else
+      echo -e "  ${YELLOW}-${NC} ${f} (skipped)"
+    fi
+  done
+
+  echo ""
+  echo -e "${BOLD}Updated in terraform.tfvars:${NC}"
+  echo -e "  ${GREEN}+${NC} rancher_token"
+  echo -e "  ${GREEN}+${NC} harvester_cloud_credential_name"
+  echo ""
+  echo -e "${BOLD}Next steps:${NC}"
+  echo "  terraform init && terraform plan"
+  echo ""
+}
+
+# -----------------------------------------------------------------------------
+# Credential refresh mode
+# Reads existing settings from terraform.tfvars, prompts only for credentials,
+# regenerates kubeconfigs and updates credential fields in-place.
+# -----------------------------------------------------------------------------
+refresh_credentials() {
+  check_prerequisites false
+
+  log_info "Reading existing settings from terraform.tfvars..."
+  RANCHER_URL=$(read_tfvar rancher_url)
+  CLUSTER_NAME=$(read_tfvar cluster_name)
+  VM_NAMESPACE=$(read_tfvar vm_namespace)
+
+  [[ -z "${RANCHER_URL}" ]]   && die "rancher_url not found in terraform.tfvars"
+  [[ -z "${CLUSTER_NAME}" ]]  && die "cluster_name not found in terraform.tfvars"
+  [[ -z "${VM_NAMESPACE}" ]]  && die "vm_namespace not found in terraform.tfvars"
+
+  log_ok "Rancher URL:   ${RANCHER_URL}"
+  log_ok "Cluster name:  ${CLUSTER_NAME}"
+  log_ok "VM namespace:  ${VM_NAMESPACE}"
+
+  # Prompt only for credentials
+  prompt_value "Rancher username" "admin" RANCHER_USER
+  prompt_secret "Rancher password" RANCHER_PASS
+
+  # Authenticate and create new API token
+  rancher_login
+  create_api_token
+
+  # Discover/validate Harvester cluster ID
+  discover_harvester_id
+
+  # Regenerate all 3 kubeconfigs (overwrite without prompting — that's the point)
+  log_info "Regenerating kubeconfigs..."
+
+  # Harvester management kubeconfig
+  local response config
+  response=$(rancher_api POST "/v3/clusters/${HARVESTER_ID}?action=generateKubeconfig")
+  config=$(echo "${response}" | jq -r '.config // empty')
+  if [[ -z "${config}" ]]; then
+    die "Failed to generate Harvester kubeconfig"
+  fi
+  echo "${config}" > "${SCRIPT_DIR}/kubeconfig-harvester.yaml"
+  chmod 600 "${SCRIPT_DIR}/kubeconfig-harvester.yaml"
+  log_ok "Regenerated kubeconfig-harvester.yaml"
+
+  # Cloud credential kubeconfig
+  local server ca_data token_value
+  server=$(kubectl --kubeconfig="${SCRIPT_DIR}/kubeconfig-harvester.yaml" config view --raw -o jsonpath='{.clusters[0].cluster.server}')
+  ca_data=$(kubectl --kubeconfig="${SCRIPT_DIR}/kubeconfig-harvester.yaml" config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+  token_value=$(kubectl --kubeconfig="${SCRIPT_DIR}/kubeconfig-harvester.yaml" config view --raw -o jsonpath='{.users[0].user.token}')
+
+  cat > "${SCRIPT_DIR}/kubeconfig-harvester-cloud-cred.yaml" <<KUBECONFIG
+apiVersion: v1
+kind: Config
+clusters:
+- name: harvester
+  cluster:
+    server: ${server}
+    certificate-authority-data: ${ca_data}
+contexts:
+- name: harvester
+  context:
+    cluster: harvester
+    user: ${CLUSTER_NAME}-cloud-cred
+current-context: harvester
+users:
+- name: ${CLUSTER_NAME}-cloud-cred
+  user:
+    token: ${token_value}
+KUBECONFIG
+  chmod 600 "${SCRIPT_DIR}/kubeconfig-harvester-cloud-cred.yaml"
+  log_ok "Regenerated kubeconfig-harvester-cloud-cred.yaml"
+
+  # Cloud provider kubeconfig
+  response=$(rancher_api POST "/k8s/clusters/${HARVESTER_ID}/v1/harvester/kubeconfig" \
+    "{\"clusterRoleName\":\"harvesterhci.io:cloudprovider\",\"namespace\":\"${VM_NAMESPACE}\",\"serviceAccountName\":\"${CLUSTER_NAME}\"}")
+  config=$(echo "${response}" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()))")
+  if [[ -z "${config}" || "${config}" == "None" ]]; then
+    die "Failed to generate cloud provider kubeconfig"
+  fi
+  echo "${config}" > "${SCRIPT_DIR}/harvester-cloud-provider-kubeconfig"
+  chmod 600 "${SCRIPT_DIR}/harvester-cloud-provider-kubeconfig"
+  log_ok "Regenerated harvester-cloud-provider-kubeconfig"
+
+  # Update only credential fields in terraform.tfvars (in-place)
+  local cloud_cred_name="${CLUSTER_NAME}-harvester"
+  log_info "Updating credentials in terraform.tfvars..."
+  sed -i \
+    -e "s|rancher_token.*=.*|rancher_token = \"${API_TOKEN}\"|" \
+    -e "s|harvester_cloud_credential_name.*=.*|harvester_cloud_credential_name = \"${cloud_cred_name}\"|" \
+    "${SCRIPT_DIR}/terraform.tfvars"
+  log_ok "Updated rancher_token and harvester_cloud_credential_name"
+
+  # Ensure Terraform state namespace
+  ensure_terraform_state_ns
+
+  # Done
+  print_refresh_summary
+}
+
+# -----------------------------------------------------------------------------
+# Full setup (default mode — original behavior)
+# -----------------------------------------------------------------------------
+full_setup() {
   check_prerequisites
 
   # Gather Rancher connection details
@@ -430,6 +574,40 @@ main() {
 
   # Done
   print_summary
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+main() {
+  local refresh_mode=false
+  case "${1:-}" in
+    -r|--refresh-credentials) refresh_mode=true ;;
+    -h|--help)                usage ;;
+    "")                       ;; # no args — full setup
+    *)                        die "Unknown option: $1 (see --help)" ;;
+  esac
+
+  echo ""
+  echo -e "${BOLD}${BLUE}============================================================${NC}"
+  if [[ "${refresh_mode}" == true ]]; then
+    echo -e "${BOLD}${BLUE}  RKE2 Cluster — Credential Refresh${NC}"
+  else
+    echo -e "${BOLD}${BLUE}  RKE2 Cluster — Credential Preparation${NC}"
+  fi
+  echo -e "${BOLD}${BLUE}============================================================${NC}"
+  echo ""
+
+  if [[ "${refresh_mode}" == true ]]; then
+    if [[ -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
+      refresh_credentials
+    else
+      log_warn "No terraform.tfvars found — running full setup instead"
+      full_setup
+    fi
+  else
+    full_setup
+  fi
 }
 
 main "$@"
