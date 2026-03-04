@@ -4,14 +4,12 @@ This guide covers common issues encountered during RKE2 cluster deployment on Ha
 
 ## Table of Contents
 
-1. [Cluster Provisioning Failures](#1-cluster-provisioning-failures)
-2. [VM and Node Issues](#2-vm-and-node-issues)
-3. [Networking and CNI Issues](#3-networking-and-cni-issues)
-4. [Registry and Image Pull Issues](#4-registry-and-image-pull-issues)
-5. [Operator Deployment Issues](#5-operator-deployment-issues)
-6. [Terraform State Issues](#6-terraform-state-issues)
-7. [Cleanup & Destroy Procedures](#7-cleanup--destroy-procedures)
-8. [Diagnostic Cheat Sheet](#8-diagnostic-cheat-sheet)
+1. [Deployment Failures](#1-deployment-failures)
+2. [Terraform State Issues](#2-terraform-state-issues)
+3. [Cluster Health Issues](#3-cluster-health-issues)
+4. [Operator Deployment Issues](#4-operator-deployment-issues)
+5. [Cleanup & Destroy Procedures](#5-cleanup--destroy-procedures)
+6. [Diagnostic Cheat Sheet](#6-diagnostic-cheat-sheet)
 
 ---
 
