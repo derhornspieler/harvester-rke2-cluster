@@ -11,10 +11,10 @@ This guide covers routine operational tasks for the RKE2 cluster deployed on Har
 5. [Registry Mirror Management](#5-registry-mirror-management)
 6. [Backup and Recovery](#6-backup-and-recovery)
 7. [Database Operator Management](#7-database-operator-management)
-8. [Clean Destroy](#8-clean-destroy)
-9. [Nuclear Cleanup](#9-nuclear-cleanup)
-10. [terraform.sh Reference](#10-terraformsh-reference)
-11. [prepare.sh Reference](#11-preparesh-reference)
+8. [Clean Destroy](#9-clean-destroy)
+9. [Nuclear Cleanup](#10-nuclear-cleanup)
+10. [terraform.sh Reference](#11-terraformsh-reference)
+11. [prepare.sh Reference](#12-preparesh-reference)
 
 ---
 
@@ -1195,7 +1195,7 @@ Destroy cluster and orphaned resources:
 2. Captures VM namespace and cluster name (needed for cleanup)
 3. Runs `terraform destroy`
 4. **If destroy fails with "Failed to save state"**: Recovers kubeconfig and state
-5. Cleans up orphaned Harvester resources (see [Clean Destroy](#8-clean-destroy))
+5. Cleans up orphaned Harvester resources (see [Clean Destroy](#9-clean-destroy))
 6. Pushes recovered state to Harvester
 
 **Use when**:

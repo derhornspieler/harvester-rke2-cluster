@@ -51,7 +51,6 @@ make docker-buildx IMG=ghcr.io/derhornspieler/rke2-cluster/storage-autoscaler:v0
 make docker-save IMG=harbor.<DOMAIN>/library/storage-autoscaler:v0.2.0
 ```
 
-
 ## Grafana Dashboard
 
 The **"Storage & PV Usage"** Grafana dashboard visualizes PVC usage percentages, scale events, poll errors, and reconcile duration using the metrics exported by this operator.
