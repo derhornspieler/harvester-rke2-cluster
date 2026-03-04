@@ -23,10 +23,22 @@ metadata:
     app.kubernetes.io/version: "25.10.4"
     app.kubernetes.io/managed-by: Helm
 ---
+# Source: mariadb-operator/templates/webhook/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mariadb-operator-webhook
+  labels:
+    helm.sh/chart: mariadb-operator-25.10.4
+    app.kubernetes.io/name: mariadb-operator-webhook
+    app.kubernetes.io/instance: mariadb-operator
+    app.kubernetes.io/version: "25.10.4"
+    app.kubernetes.io/managed-by: Helm
+---
 # Source: mariadb-operator/templates/operator/configmap.yaml
 apiVersion: v1
 data:
-  MARIADB_OPERATOR_IMAGE: "docker-registry3.mariadb.com/mariadb-operator/mariadb-operator:25.10.4"
+  MARIADB_OPERATOR_IMAGE: "ghcr.io/mariadb-operator/mariadb-operator:25.10.4"
   MARIADB_GALERA_LIB_PATH: "/usr/lib/galera/libgalera_smm.so"
   MARIADB_DEFAULT_VERSION: "11.8"
   RELATED_IMAGE_MARIADB: "docker-registry1.mariadb.com/library/mariadb:11.8.5"
@@ -469,6 +481,26 @@ subjects:
   name: mariadb-operator
   namespace: mariadb-operator
 ---
+# Source: mariadb-operator/templates/webhook/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-operator-webhook
+  labels:
+    helm.sh/chart: mariadb-operator-25.10.4
+    app.kubernetes.io/name: mariadb-operator-webhook
+    app.kubernetes.io/instance: mariadb-operator
+    app.kubernetes.io/version: "25.10.4"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 9443
+  selector:
+    app.kubernetes.io/name: mariadb-operator-webhook
+    app.kubernetes.io/instance: mariadb-operator
+---
 # Source: mariadb-operator/templates/cert-controller/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -494,7 +526,7 @@ spec:
       serviceAccountName: mariadb-operator-cert-controller-cert-controller
       automountServiceAccountToken: true
       containers:
-        - image: "docker-registry3.mariadb.com/mariadb-operator/mariadb-operator:25.10.4"
+        - image: "ghcr.io/mariadb-operator/mariadb-operator:25.10.4"
           imagePullPolicy: IfNotPresent
           name: cert-controller
           args:
@@ -556,7 +588,7 @@ spec:
       automountServiceAccountToken: true
       terminationGracePeriodSeconds: 10
       containers:
-        - image: "docker-registry3.mariadb.com/mariadb-operator/mariadb-operator:25.10.4"
+        - image: "ghcr.io/mariadb-operator/mariadb-operator:25.10.4"
           imagePullPolicy: IfNotPresent
           name: controller
           args:
@@ -583,3 +615,289 @@ spec:
                   fieldPath: metadata.namespace
             - name: MARIADB_OPERATOR_SA_PATH
               value: /var/run/secrets/kubernetes.io/serviceaccount/token
+---
+# Source: mariadb-operator/templates/webhook/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb-operator-webhook
+  labels:
+    helm.sh/chart: mariadb-operator-25.10.4
+    app.kubernetes.io/name: mariadb-operator-webhook
+    app.kubernetes.io/instance: mariadb-operator
+    app.kubernetes.io/version: "25.10.4"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mariadb-operator-webhook
+      app.kubernetes.io/instance: mariadb-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mariadb-operator-webhook
+        app.kubernetes.io/instance: mariadb-operator
+    spec:
+      serviceAccountName: mariadb-operator-webhook
+      automountServiceAccountToken: true
+      hostNetwork: false
+      containers:
+        - image: "docker-registry3.mariadb.com/mariadb-operator/mariadb-operator:25.10.4"
+          imagePullPolicy: IfNotPresent
+          name: webhook
+          args:
+            - webhook
+            - --ca-cert-path=/tmp/k8s-webhook-server/certificate-authority/tls.crt
+            - --cert-dir=/tmp/k8s-webhook-server/serving-certs
+            - --dns-name=mariadb-operator-webhook.mariadb-operator.svc
+            - --port=9443
+            - --metrics-addr=:8080
+            - --health-addr=:8081
+            - --log-level=INFO
+          ports:
+            - containerPort: 9443
+              protocol: TCP
+              name: https
+            - containerPort: 8080
+              protocol: TCP
+              name: metrics
+            - containerPort: 8081
+              protocol: TCP
+              name: health
+          volumeMounts:
+            - mountPath: /tmp/k8s-webhook-server/certificate-authority
+              name: ca
+              readOnly: true
+            - mountPath: /tmp/k8s-webhook-server/serving-certs
+              name: cert
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 5
+      volumes:
+        - name: ca
+          secret:
+            defaultMode: 420
+            secretName: mariadb-operator-webhook-ca
+        - name: cert
+          secret:
+            defaultMode: 420
+            secretName: mariadb-operator-webhook-cert
+---
+# Source: mariadb-operator/templates/webhook/config.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: mariadb-operator-webhook
+  labels:
+    helm.sh/chart: mariadb-operator-25.10.4
+    app.kubernetes.io/name: mariadb-operator-webhook
+    app.kubernetes.io/instance: mariadb-operator
+    app.kubernetes.io/version: "25.10.4"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    k8s.mariadb.com/webhook: ""
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-backup
+    failurePolicy: Fail
+    name: vbackup-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - backups
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-physicalbackup
+    failurePolicy: Fail
+    name: vphysicalbackup-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - physicalbackups
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-connection
+    failurePolicy: Fail
+    name: vconnection-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - connections
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-database
+    failurePolicy: Fail
+    name: vdatabase-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - databases
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-grant
+    failurePolicy: Fail
+    name: vgrant-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - grants
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-mariadb
+    failurePolicy: Fail
+    name: vmariadb-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - mariadbs
+    sideEffects: None
+  - admissionReviewVersions:
+    - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-maxscale
+    failurePolicy: Fail
+    name: vmaxscale-v1alpha1.kb.io
+    rules:
+    - apiGroups:
+      - k8s.mariadb.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - maxscales
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-restore
+    failurePolicy: Fail
+    name: vrestore-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - restores
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-sqljob
+    failurePolicy: Fail
+    name: vsqljob-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - sqljobs
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: mariadb-operator-webhook
+        namespace: mariadb-operator
+        path: /validate-k8s-mariadb-com-v1alpha1-user
+    failurePolicy: Fail
+    name: vuser-v1alpha1.kb.io
+    rules:
+      - apiGroups:
+          - k8s.mariadb.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - users
+    sideEffects: None

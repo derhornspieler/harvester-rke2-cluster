@@ -303,7 +303,10 @@ resource "null_resource" "deploy_mariadb_operator" {
       # Create namespace (helm template doesn't include it)
       kubectl create namespace mariadb-operator --dry-run=client -o yaml | kubectl apply -f -
 
-      # Apply upstream Helm-rendered manifest (CRDs, RBAC, Deployment, cert-controller)
+      # Apply CRDs from separate chart (helm template --include-crds doesn't work)
+      kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-crds-${local.db_operators["mariadb-operator"].version}.yaml"
+
+      # Apply upstream Helm-rendered manifest (RBAC, Deployment, cert-controller, webhook)
       kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
 
       # Patch deployments to schedule on database pool nodes
