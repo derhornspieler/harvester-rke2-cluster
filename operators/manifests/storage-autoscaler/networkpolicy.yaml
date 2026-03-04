@@ -25,17 +25,17 @@ spec:
           protocol: TCP
   egress:
     # Allow DNS resolution
-    - to: []
-      ports:
+    - ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Allow kube-apiserver access
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
+    # Allow kube-apiserver access (service ClusterIP:443 and pod:6443).
+    # Omit 'to:' because Cilium's ipBlock 0.0.0.0/0 only matches
+    # reserved:world (external), not cluster-internal service/pod IPs.
+    - ports:
+        - port: 443
+          protocol: TCP
         - port: 6443
           protocol: TCP
     # Allow Prometheus access (storage-autoscaler queries metrics)

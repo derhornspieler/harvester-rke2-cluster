@@ -47,9 +47,9 @@ rules:
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["watch", "list"]
-  # Storage classes for PV-aware scheduling
+  # Storage resources for PV-aware scheduling and volume-aware eviction
   - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses", "csinodes", "csistoragecapacities", "csidrivers"]
+    resources: ["storageclasses", "csinodes", "csistoragecapacities", "csidrivers", "volumeattachments"]
     verbs: ["watch", "list", "get"]
   # Leader election
   - apiGroups: ["coordination.k8s.io"]
