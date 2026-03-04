@@ -582,8 +582,6 @@ users:
     token: ${rancher_token}
 KUBECONFIG
     chmod 600 "$rancher_kubeconfig"
-    # Clean up temp kubeconfig on function exit
-    trap 'rm -f "$rancher_kubeconfig"' RETURN
 
     local RKUBECTL="kubectl --kubeconfig=${rancher_kubeconfig}"
 
@@ -702,6 +700,9 @@ KUBECONFIG
     else
       log_ok "No orphaned RBAC resources found"
     fi
+
+    # Clean up temp kubeconfig
+    rm -f "$rancher_kubeconfig"
   else
     log_warn "Rancher URL or token not available — skipping fleet-default and RBAC cleanup"
   fi
