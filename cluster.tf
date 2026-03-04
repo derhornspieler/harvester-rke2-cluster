@@ -252,7 +252,7 @@ resource "rancher2_cluster_v2" "rke2" {
         deployment = {
           initContainers = [{
             name    = "combine-ca"
-            image   = "${var.harbor_fqdn}/library/alpine:3.21"
+            image   = "${var.harbor_fqdn}/docker.io/library/alpine:3.21"
             command = ["sh", "-c", "cp /etc/ssl/certs/ca-certificates.crt /combined-ca/ca-certificates.crt 2>/dev/null || true; if [ -s /vault-ca/ca.crt ]; then cat /vault-ca/ca.crt >> /combined-ca/ca-certificates.crt; fi"]
             volumeMounts = [
               { name = "vault-root-ca", mountPath = "/vault-ca", readOnly = true },
