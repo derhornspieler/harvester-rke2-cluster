@@ -50,6 +50,7 @@ spec:
             - controller
             - --leader-elect
             - --webhook-port=9443
+            - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
             - --max-concurrent-reconciles=10
           env:
             - name: OPERATOR_IMAGE_NAME
@@ -109,7 +110,7 @@ spec:
       volumes:
         - name: webhook-certs
           secret:
-            secretName: cnpg-webhook-server-cert
+            secretName: cnpg-webhook-cert
             optional: true
         - name: run-secrets
           emptyDir: {}

@@ -85,23 +85,9 @@ resource "null_resource" "operator_kubeconfig" {
         "${path.module}/operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
 
-      # Render CNPG deployment template (upstream image, only version substitution)
-      sed \
-        -e 's|$${version}|${local.db_operators["cnpg"].version}|g' \
-        "${path.module}/operators/templates/cnpg-deployment.yaml.tftpl" \
-        > "${local.rendered_dir}/cnpg-deployment.yaml"
-
-      # Render MariaDB Operator deployment template (upstream image, only version substitution)
-      sed \
-        -e 's|$${version}|${local.db_operators["mariadb-operator"].version}|g' \
-        "${path.module}/operators/templates/mariadb-operator-deployment.yaml.tftpl" \
-        > "${local.rendered_dir}/mariadb-operator-deployment.yaml"
-
-      # Render Redis Operator deployment template (upstream image, only version substitution)
-      sed \
-        -e 's|$${version}|${local.db_operators["redis-operator"].version}|g' \
-        "${path.module}/operators/templates/redis-operator-deployment.yaml.tftpl" \
-        > "${local.rendered_dir}/redis-operator-deployment.yaml"
+      # Note: DB operator templates no longer rendered here.
+      # DB operators use upstream install manifests from operators/upstream/
+      # with nodeSelector patched at deploy time.
     SCRIPT
   }
 }
@@ -267,19 +253,17 @@ resource "null_resource" "deploy_cnpg" {
 
       echo "Deploying CloudNativePG ${local.db_operators["cnpg"].version}..."
 
-      # Apply namespace first
-      kubectl apply -f "${path.module}/operators/manifests/cnpg-system/namespace.yaml"
+      # Apply upstream install manifest (CRDs, RBAC, Deployment, Webhooks, Service — all-in-one)
+      kubectl apply --server-side -f "${path.module}/operators/upstream/cnpg-${local.db_operators["cnpg"].version}.yaml"
 
-      # Apply CRDs — must exist before the controller starts
-      kubectl apply --server-side -f "${path.module}/operators/manifests/cnpg-system/crds.yaml"
+      # Patch deployment to schedule on database pool nodes
+      kubectl patch deployment cnpg-controller-manager -n cnpg-system --type=json \
+        -p '[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"workload-type":"database"}}]'
 
-      # Apply remaining static manifests (rbac, service, hpa, networkpolicy, webhook)
-      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml webhook.yaml; do
+      # Apply our additions (NetworkPolicy, HPA, PDB)
+      for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/cnpg-system/$f"
       done
-
-      # Apply rendered deployment (with correct Harbor image reference)
-      kubectl apply -f "${local.rendered_dir}/cnpg-deployment.yaml"
 
       # Wait for rollout to complete
       kubectl rollout status deployment/cnpg-controller-manager \
@@ -316,20 +300,22 @@ resource "null_resource" "deploy_mariadb_operator" {
 
       echo "Deploying MariaDB Operator ${local.db_operators["mariadb-operator"].version}..."
 
-      # Apply namespace first
-      kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/namespace.yaml"
+      # Create namespace (helm template doesn't include it)
+      kubectl create namespace mariadb-operator --dry-run=client -o yaml | kubectl apply -f -
 
-      # Apply CRDs — must exist before the controller starts
-      kubectl apply --server-side -f "${path.module}/operators/manifests/mariadb-operator/crds.yaml"
+      # Apply upstream Helm-rendered manifest (CRDs, RBAC, Deployment, cert-controller)
+      kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
 
-      # Apply remaining static manifests (rbac, service, hpa, pdb, networkpolicy)
-      # Note: webhook.yaml skipped — cert-controller requires separate deployment
-      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
+      # Patch deployments to schedule on database pool nodes
+      for deploy in mariadb-operator mariadb-operator-cert-controller; do
+        kubectl patch deployment "$deploy" -n mariadb-operator --type=json \
+          -p '[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"workload-type":"database"}}]' 2>/dev/null || true
       done
 
-      # Apply rendered deployment (with correct Harbor image reference)
-      kubectl apply -f "${local.rendered_dir}/mariadb-operator-deployment.yaml"
+      # Apply our additions (NetworkPolicy, HPA, PDB)
+      for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
+        kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
+      done
 
       # Wait for rollout to complete
       kubectl rollout status deployment/mariadb-operator \
@@ -366,20 +352,20 @@ resource "null_resource" "deploy_redis_operator" {
 
       echo "Deploying Redis Operator ${local.db_operators["redis-operator"].version}..."
 
-      # Apply namespace first
-      kubectl apply -f "${path.module}/operators/manifests/redis-operator/namespace.yaml"
+      # Create namespace (helm template doesn't include it)
+      kubectl create namespace redis-operator --dry-run=client -o yaml | kubectl apply -f -
 
-      # Apply CRDs — must exist before the controller starts
-      kubectl apply --server-side -f "${path.module}/operators/manifests/redis-operator/crds.yaml"
+      # Apply upstream Helm-rendered manifest (CRDs, RBAC, Deployment)
+      kubectl apply --server-side -f "${path.module}/operators/upstream/redis-operator-${local.db_operators["redis-operator"].version}.yaml"
 
-      # Apply remaining static manifests (rbac, service, hpa, networkpolicy)
-      # Note: Redis Operator does not use webhooks
-      for f in rbac.yaml service.yaml hpa.yaml pdb.yaml networkpolicy.yaml; do
+      # Patch deployment to schedule on database pool nodes
+      kubectl patch deployment redis-operator -n redis-operator --type=json \
+        -p '[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"workload-type":"database"}}]'
+
+      # Apply our additions (NetworkPolicy, HPA, PDB)
+      for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
         kubectl apply -f "${path.module}/operators/manifests/redis-operator/$f"
       done
-
-      # Apply rendered deployment (with correct Harbor image reference)
-      kubectl apply -f "${local.rendered_dir}/redis-operator-deployment.yaml"
 
       # Wait for rollout to complete
       kubectl rollout status deployment/redis-operator \
