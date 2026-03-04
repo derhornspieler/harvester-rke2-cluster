@@ -390,6 +390,16 @@ variable "bootstrap_registry_ca_pem" {
 }
 
 # -----------------------------------------------------------------------------
+# Workarounds
+# -----------------------------------------------------------------------------
+
+variable "workaround_cattle_agent_taint" {
+  description = "Remove node.cloudprovider.kubernetes.io/uninitialized taint from bootstrap CP node if cattle-cluster-agent is stuck Pending (Rancher bug #40418)"
+  type        = bool
+  default     = true
+}
+
+# -----------------------------------------------------------------------------
 # Operator Deployment
 # -----------------------------------------------------------------------------
 

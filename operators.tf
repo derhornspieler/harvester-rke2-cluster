@@ -11,15 +11,143 @@
 #
 # Dependency chain:
 #   rancher2_cluster_v2.rke2
-#     -> null_resource.operator_kubeconfig
-#       -> null_resource.operator_image_push
-#         -> null_resource.deploy_node_labeler          (parallel)
-#         -> null_resource.deploy_storage_autoscaler    (parallel)
-#       -> null_resource.deploy_cnpg                    (parallel)
-#       -> null_resource.deploy_mariadb_operator        (parallel)
-#       -> null_resource.deploy_redis_operator          (parallel)
-#       -> null_resource.deploy_cluster_autoscaler      (parallel)
+#     -> null_resource.workaround_cattle_agent_taint    (conditional)
+#       -> null_resource.operator_kubeconfig
+#         -> null_resource.operator_image_push
+#           -> null_resource.deploy_node_labeler          (parallel)
+#           -> null_resource.deploy_storage_autoscaler    (parallel)
+#         -> null_resource.deploy_cnpg                    (parallel)
+#         -> null_resource.deploy_mariadb_operator        (parallel)
+#         -> null_resource.deploy_redis_operator          (parallel)
+#         -> null_resource.deploy_cluster_autoscaler      (parallel)
 # -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Workaround: cattle-cluster-agent blocked by cloud-provider taint
+# -----------------------------------------------------------------------------
+# Rancher bug #40418: https://github.com/rancher/rancher/issues/40418
+# Affects: Rancher v2.13.x with Harvester v1.7.1, rancher2 provider v13.1,
+#          harvester provider v0.6
+#
+# When --cloud-provider=external is set (Harvester cloud provider), kubelet
+# adds the taint node.cloudprovider.kubernetes.io/uninitialized=true:NoSchedule
+# to every node. The Harvester cloud controller manager (CCM) is supposed to
+# remove this taint after initializing the node. However, the CCM runs as a
+# pod on the cluster — it can't schedule until at least one node is
+# taint-free. Meanwhile, Rancher's cattle-cluster-agent also can't schedule,
+# so Rancher never sees the cluster come online.
+#
+# This workaround detects the deadlock on the bootstrap control plane node
+# and removes the taint only if the cattle-cluster-agent is stuck Pending.
+# Once the agent connects, Rancher completes provisioning and the CCM
+# eventually clears the remaining taints normally.
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "workaround_cattle_agent_taint" {
+  count = var.workaround_cattle_agent_taint ? 1 : 0
+
+  triggers = {
+    cluster_id = rancher2_cluster_v2.rke2.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-SCRIPT
+      set -euo pipefail
+
+      TAINT_KEY="node.cloudprovider.kubernetes.io/uninitialized"
+      POLL_INTERVAL=10
+      TIMEOUT=300
+      KUBECONFIG_FILE=$$(mktemp)
+      trap 'rm -f "$$KUBECONFIG_FILE"' EXIT
+
+      # Write the cluster kubeconfig to a temp file
+      printf '%s\n' "$$KUBECONFIG_CONTENT" > "$$KUBECONFIG_FILE"
+      chmod 600 "$$KUBECONFIG_FILE"
+      export KUBECONFIG="$$KUBECONFIG_FILE"
+
+      echo "[workaround-40418] Waiting for at least one node to register..."
+      elapsed=0
+      while true; do
+        node_count=$$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
+        if [[ "$$node_count" -gt 0 ]]; then
+          echo "[workaround-40418] Found $$node_count node(s)."
+          break
+        fi
+        if [[ "$$elapsed" -ge "$$TIMEOUT" ]]; then
+          echo "[workaround-40418] Timeout waiting for nodes. Skipping workaround."
+          exit 0
+        fi
+        sleep "$$POLL_INTERVAL"
+        elapsed=$$((elapsed + POLL_INTERVAL))
+      done
+
+      # Get the first control plane node (bootstrap node)
+      bootstrap_node=$$(kubectl get nodes -l node-role.kubernetes.io/control-plane \
+        --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -n 1 || true)
+
+      if [[ -z "$$bootstrap_node" ]]; then
+        # Fallback: use the first node regardless of role
+        bootstrap_node=$$(kubectl get nodes --no-headers \
+          -o custom-columns=NAME:.metadata.name 2>/dev/null | head -n 1 || true)
+      fi
+
+      if [[ -z "$$bootstrap_node" ]]; then
+        echo "[workaround-40418] No nodes found. Skipping workaround."
+        exit 0
+      fi
+
+      echo "[workaround-40418] Bootstrap node: $$bootstrap_node"
+
+      # Check if the node has the cloud-provider uninitialized taint
+      has_taint=$$(kubectl get node "$$bootstrap_node" -o jsonpath='{.spec.taints}' 2>/dev/null || echo "")
+      if [[ "$$has_taint" != *"$$TAINT_KEY"* ]]; then
+        echo "[workaround-40418] No $$TAINT_KEY taint detected. Nothing to do."
+        exit 0
+      fi
+
+      echo "[workaround-40418] Taint $$TAINT_KEY detected on $$bootstrap_node."
+
+      # Wait for cattle-cluster-agent deployment to exist
+      echo "[workaround-40418] Waiting for cattle-cluster-agent deployment..."
+      elapsed=0
+      while true; do
+        if kubectl get deployment cattle-cluster-agent -n cattle-system --no-headers 2>/dev/null | grep -q .; then
+          break
+        fi
+        if [[ "$$elapsed" -ge "$$TIMEOUT" ]]; then
+          echo "[workaround-40418] Timeout waiting for cattle-cluster-agent deployment. Skipping."
+          exit 0
+        fi
+        sleep "$$POLL_INTERVAL"
+        elapsed=$$((elapsed + POLL_INTERVAL))
+      done
+
+      # Check if any cattle-cluster-agent pod is Pending
+      pending_pods=$$(kubectl get pods -n cattle-system -l app=cattle-cluster-agent \
+        --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l || echo "0")
+
+      if [[ "$$pending_pods" -eq 0 ]]; then
+        echo "[workaround-40418] cattle-cluster-agent is not Pending. Nothing to do."
+        exit 0
+      fi
+
+      echo "[workaround-40418] cattle-cluster-agent has $$pending_pods Pending pod(s)."
+      echo "[workaround-40418] Removing $$TAINT_KEY taint from $$bootstrap_node..."
+
+      kubectl taint node "$$bootstrap_node" "$${TAINT_KEY}-"
+
+      echo "[workaround-40418] Taint removed. Waiting for cattle-cluster-agent to become Ready..."
+      kubectl rollout status deployment/cattle-cluster-agent \
+        -n cattle-system --timeout="$${TIMEOUT}s"
+
+      echo "[workaround-40418] cattle-cluster-agent is Ready. Workaround applied successfully."
+    SCRIPT
+
+    environment = {
+      KUBECONFIG_CONTENT = rancher2_cluster_v2.rke2.kube_config
+    }
+  }
+}
 
 locals {
   operators = {
@@ -105,6 +233,10 @@ resource "null_resource" "operator_kubeconfig" {
       # with nodeSelector patched at deploy time.
     SCRIPT
   }
+
+  depends_on = [
+    null_resource.workaround_cattle_agent_taint,
+  ]
 }
 
 # -----------------------------------------------------------------------------
