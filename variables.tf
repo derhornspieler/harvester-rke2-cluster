@@ -408,7 +408,7 @@ variable "deploy_cnpg" {
 variable "deploy_mariadb_operator" {
   description = "Deploy MariaDB Operator (requires deploy_operators = true)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deploy_redis_operator" {
