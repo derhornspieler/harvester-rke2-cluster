@@ -4,12 +4,14 @@ This guide covers common issues encountered during RKE2 cluster deployment on Ha
 
 ## Table of Contents
 
-1. [Deployment Failures](#1-deployment-failures)
-2. [Terraform State Issues](#2-terraform-state-issues)
-3. [Cluster Health Issues](#3-cluster-health-issues)
-4. [Operator Deployment Issues](#4-operator-deployment-issues)
-5. [Cleanup & Destroy Procedures](#5-cleanup--destroy-procedures)
-6. [Diagnostic Cheat Sheet](#6-diagnostic-cheat-sheet)
+1. [Cluster Provisioning Failures](#1-cluster-provisioning-failures)
+2. [VM and Node Issues](#2-vm-and-node-issues)
+3. [Networking and CNI Issues](#3-networking-and-cni-issues)
+4. [Registry and Image Pull Issues](#4-registry-and-image-pull-issues)
+5. [Operator Deployment Issues](#5-operator-deployment-issues)
+6. [Terraform State Issues](#6-terraform-state-issues)
+7. [Cleanup & Destroy Procedures](#7-cleanup--destroy-procedures)
+8. [Diagnostic Cheat Sheet](#8-diagnostic-cheat-sheet)
 
 ---
 
@@ -507,6 +509,184 @@ terraform apply
 ---
 
 ## 3. Cluster Health Issues
+
+### Symptom: Worker nodes showing "uninitialized" taint
+
+**Quick Check**
+
+- [ ] Check node taints: `kubectl describe node <NODE_NAME> | grep Taints`
+- [ ] Look for: `node.cloudprovider.kubernetes.io/uninitialized:NoSchedule`
+- [ ] Check Harvester cloud provider: `kubectl get daemonset -n kube-system harvester-cloud-provider`
+- [ ] Check cloud provider logs: `kubectl logs -n kube-system -l app.kubernetes.io/name=harvester-cloud-provider --tail=50`
+
+**What This Means**
+
+- RKE2 bootstraps nodes with this taint until cloud provider initializes them
+- Harvester cloud provider should remove taint once node is registered
+- If taint persists, provider failed to initialize the node
+
+**Root Causes & Solutions**
+
+1. **Harvester cloud provider not deployed**
+   - Check: `kubectl get daemonset -n kube-system harvester-cloud-provider`
+   - If missing, RKE2 should deploy it automatically during bootstrap
+   - Manual deploy: See RKE2 cloud provider documentation
+
+2. **Cloud provider can't communicate with Harvester**
+   - Check provider logs: `kubectl logs -n kube-system -l app.kubernetes.io/name=harvester-cloud-provider`
+   - Verify kubeconfig in provider: `kubectl get secret -n kube-system harvester-kubeconfig -o yaml`
+   - Solution: Ensure cloud credential is correct in Rancher
+
+3. **Taint manually added or not removed**
+   - Remove taint if cloud provider will not initialize:
+     ```bash
+     kubectl taint node <NODE_NAME> \
+       node.cloudprovider.kubernetes.io/uninitialized:NoSchedule-
+     ```
+
+**Resolution Steps**
+
+```bash
+# 1. Check which nodes have uninitialized taint
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints[*]}{"\n"}{end}' | grep uninitialized
+
+# 2. Check cloud provider status
+kubectl get daemonset -n kube-system harvester-cloud-provider
+
+# 3. Check cloud provider logs
+kubectl logs -n kube-system -l app.kubernetes.io/name=harvester-cloud-provider -f
+
+# 4. If provider logs show connection errors, verify Harvester kubeconfig
+kubectl get secret -n kube-system harvester-kubeconfig -o yaml
+
+# 5. Wait for provider to remove taint (can take 1-2 minutes)
+watch 'kubectl describe node <NODE_NAME> | grep Taints'
+```
+
+---
+
+### Symptom: cattle-cluster-agent cannot schedule on worker nodes
+
+**Quick Check**
+
+- [ ] Check cattle-cluster-agent pod: `kubectl get pods -n cattle-system -l app=cattle-cluster-agent`
+- [ ] Check pod events: `kubectl describe pod -n cattle-system -l app=cattle-cluster-agent`
+- [ ] Check node taints: `kubectl describe node <NODE_NAME> | grep Taints`
+- [ ] Check node tolerations on pod: `kubectl get pod -n cattle-system -l app=cattle-cluster-agent -o jsonpath='{.items[0].spec.tolerations}'`
+
+**What This Means**
+
+- cattle-cluster-agent is Rancher's cluster controller, must run on at least one node
+- If no toleration for control plane taints, agent can't schedule on CP-only cluster
+- This causes Rancher to lose connectivity to the cluster
+
+**Root Causes & Solutions**
+
+1. **No worker nodes, control plane has NoSchedule taint**
+   - Issue: Control plane nodes have `node-role.kubernetes.io/control-plane:NoSchedule`
+   - cattle-cluster-agent has no toleration, can't schedule
+   - Solution: Add toleration to cattle-cluster-agent deployment:
+     ```bash
+     kubectl patch deployment cattle-cluster-agent -n cattle-system --type merge -p \
+       '{"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}'
+     ```
+
+2. **Control plane has uninitialized taint AND no worker nodes**
+   - Solution: Remove uninitialized taint from control plane nodes:
+     ```bash
+     kubectl taint node <CP_NODE> node.cloudprovider.kubernetes.io/uninitialized:NoSchedule-
+     ```
+
+3. **cattle-cluster-agent pod in CrashLoopBackOff**
+   - Check logs: `kubectl logs -n cattle-system -l app=cattle-cluster-agent`
+   - Common causes: RBAC issue, service account missing, image pull error
+   - Solution: Check events and logs to diagnose specific cause
+
+**Prevention**
+
+- RKE2 should automatically configure cattle-cluster-agent tolerations
+- If deploying via Rancher with custom node pools, ensure at least one worker node OR add control plane toleration
+
+---
+
+### Symptom: Database pool nodes unable to initialize or stay in NotReady state
+
+**Quick Check**
+
+- [ ] Check database pool nodes: `kubectl get nodes -l workload-type=database -o wide`
+- [ ] Check for uninitialized taints: `kubectl describe node -l workload-type=database | grep -A 2 Taints`
+- [ ] Verify cloud provider removing taint: `kubectl logs -n kube-system -l app.kubernetes.io/name=harvester-cloud-provider | grep -i database`
+- [ ] Check node-labeler has labeled them: `kubectl get nodes -l workload-type=database`
+
+**Root Causes & Solutions**
+
+1. **Database nodes stuck with uninitialized taint**
+   - Issue: Harvester cloud provider hasn't initialized database nodes
+   - Solution: Verify cloud provider is running and check logs for errors
+   - Manual workaround (if cloud provider is working correctly):
+     ```bash
+     kubectl taint node -l workload-type=database \
+       node.cloudprovider.kubernetes.io/uninitialized:NoSchedule-
+     ```
+
+2. **node-labeler hasn't reached database nodes**
+   - Issue: Database nodes weren't labeled during provisioning
+   - Solution: Force labeler to reconcile:
+     ```bash
+     kubectl rollout restart deployment node-labeler -n node-labeler
+
+     # Wait for labels to appear
+     watch 'kubectl get nodes -l workload-type=database'
+     ```
+
+3. **Database pool nodes not configured in machine_pools**
+   - Issue: `cluster.tf` missing database pool configuration
+   - Solution: Verify `cluster.tf` has database pool defined:
+     ```hcl
+     machine_pools {
+       name      = "database"
+       roles     = ["worker"]
+       labels    = { "workload-type" = "database" }
+       min_count = 4
+       max_count = 10
+     }
+     ```
+   - Re-apply: `terraform apply`
+
+4. **Database nodes failing cloud-init or user data**
+   - Issue: VM user-data script failed during boot
+   - Solution: Check VM logs on Harvester:
+     ```bash
+     kubectl --kubeconfig=kubeconfig-harvester.yaml logs vm/<VM_NAME> -n <NAMESPACE>
+     ```
+
+**Resolution Steps**
+
+```bash
+# 1. Check database node status
+kubectl get nodes -l workload-type=database -o wide
+
+# 2. Check cloud provider logs
+kubectl logs -n kube-system -l app.kubernetes.io/name=harvester-cloud-provider \
+  --tail=100 | grep -i database
+
+# 3. Check for uninitialized taint
+kubectl describe nodes -l workload-type=database | grep -A 2 Taints
+
+# 4. If nodes are properly initialized, verify workload can schedule
+kubectl get pods -A | grep -i database || echo "No database workloads yet"
+
+# 5. Wait for full reconciliation
+watch 'kubectl get nodes -l workload-type=database'
+```
+
+**Escalation**
+
+- If database nodes never reach Ready: check HarvesterMachine objects on Harvester
+- Verify `cluster.tf` machine_pools defines database correctly
+- Check Rancher UI for provisioning status on database pool
+
+---
 
 ### Symptom: Worker nodes missing "workload-type" labels
 
@@ -1197,6 +1377,6 @@ iptables -L -n | grep <PORT>
 
 ## Document Info
 
-- **Last Updated**: 2026-03-02
+- **Last Updated**: 2026-03-04
 - **Applicable To**: RKE2 cluster deployment on Harvester via Terraform
-- **Scope**: Deployment failures, state issues, operator issues, cleanup procedures
+- **Scope**: Cluster provisioning, networking, operators, state management, cleanup, Rancher API issues

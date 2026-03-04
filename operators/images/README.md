@@ -22,7 +22,11 @@ Examples:
 - `node-labeler-v0.2.0-amd64.tar.gz`
 - `storage-autoscaler-v0.2.0-amd64.tar.gz`
 
-### How to Build
+### How to Obtain
+
+You can either build locally or download pre-built tarballs from GitHub Releases.
+
+#### Build Locally
 
 From the repository root, build each operator image and save as a tarball:
 
@@ -42,6 +46,19 @@ Then copy the tarballs into this directory:
 
 ```bash
 cp operators/images/*.tar.gz cluster/operators/images/
+```
+
+#### Download from GitHub Releases
+
+Pre-built tarballs are available in the [GitHub Releases](https://github.com/derhornspieler/harvester-rke2-cluster/releases/tag/v1.0.0):
+
+```bash
+# Download operator image tarballs
+wget https://github.com/derhornspieler/harvester-rke2-cluster/releases/download/v1.0.0/node-labeler-v0.2.0-amd64.tar.gz
+wget https://github.com/derhornspieler/harvester-rke2-cluster/releases/download/v1.0.0/storage-autoscaler-v0.2.0-amd64.tar.gz
+
+# Place in operators/images directory
+mv *.tar.gz operators/images/
 ```
 
 ### What Happens at Deploy Time

@@ -175,13 +175,13 @@ nodeSelector:
 2. `crane push` to `harbor.aegisgroup.ch/library/<operator-name>:<version>`
 3. Idempotent — skips if image+tag already exists in library project
 
-## Pre-requisite: MariaDB Registry Proxy-Cache Bug Fix
+## Pre-Requisite: Upstream Image Proxying
 
-**Location**: `/home/rocky/data/rke2-cluster-via-rancher/scripts/lib.sh`
+Database operators pull images from upstream registries through Harbor's proxy-cache configuration. Harbor is configured to cache images from:
+- `ghcr.io` (CloudNativePG, MariaDB Operator)
+- `quay.io` (Redis Operator)
 
-**Bug**: `registry_names` has 8 entries (includes `docker-registry3.mariadb.com`) but `registry_urls` has only 7 entries. The MariaDB registry URL is missing, causing Harbor proxy-cache project creation to fail silently.
-
-**Fix**: Add `https://docker-registry3.mariadb.com` to both the airgapped and non-airgapped `registry_urls` lists.
+The cluster's `registries.yaml` directs pulls of these images to Harbor, which automatically proxies them from upstream on first access.
 
 ## Scope Boundaries
 
