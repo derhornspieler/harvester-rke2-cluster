@@ -839,7 +839,7 @@ All container images follow pinned versions and authenticated pull paths.
 **Custom Operators (node-labeler, storage-autoscaler):**
 - **Build**: Images built from source in `operators/` directory (not included in git)
 - **Storage**: Tarballs stored in `operators/images/` before Terraform apply
-- **Registry**: Pushed to Harbor via `crane` CLI: `harbor.aegisgroup.ch/library/node-labeler:v0.2.0`
+- **Registry**: Pushed to Harbor via `crane` CLI: `harbor.example.com/library/node-labeler:v0.2.0`
 - **Deploy**: Referenced via templated `image` field: `${harbor_fqdn}/library/node-labeler:${version}`
 - **Version Pinning**: No `:latest` tags; all versions pinned to semver (e.g., v0.2.0)
 
@@ -847,7 +847,7 @@ All container images follow pinned versions and authenticated pull paths.
 - **Source**: Upstream Helm charts and official install manifests
 - **Images**: Pulled from upstream: `ghcr.io/cloudnative-pg/cloudnative-pg:v1.28.1`, `quay.io/opstree/redis-operator:v0.23.0`, etc.
 - **Registry Redirect**: RKE2 `registries.yaml` (containerd mirror config) transparently rewrites pulls to Harbor proxy-cache
-- **Transparent Proxying**: No code changes needed; containerd automatically routes `ghcr.io/*` → `harbor.aegisgroup.ch/ghcr/*`
+- **Transparent Proxying**: No code changes needed; containerd automatically routes `ghcr.io/*` → `harbor.example.com/ghcr/*`
 - **Version Pinning**: All manifests use specific versions (no `:latest`)
 
 **Cluster Autoscaler:**

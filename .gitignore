@@ -18,5 +18,8 @@ vault-init.json
 # Operator image tarballs (large, user-supplied)
 operators/images/*.tar.gz
 
+# Internal planning documents (local working docs, not public)
+docs/plans/
+
 # Claude Code agent memory (local, not shared)
 .claude/
