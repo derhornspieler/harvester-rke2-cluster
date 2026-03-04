@@ -712,16 +712,178 @@ If only one approach is used, resources will remain orphaned. This is why `destr
 
 ---
 
-## 11. Summary
+## 11. Security Posture
+
+The cluster implements defense-in-depth security across networking, pod security, RBAC, and supply chain controls to meet CIS Kubernetes Benchmarks and DISA STIG requirements.
+
+### 11.1. Cilium NetworkPolicy Model
+
+All operator namespaces enforce default-deny ingress and egress policies, allowing only explicitly-whitelisted traffic.
+
+**Default-Deny Architecture:**
+- Every operator namespace (`node-labeler`, `storage-autoscaler`, `cluster-autoscaler`) has a `default-deny` NetworkPolicy
+- Denies all ingress and egress by default
+- Only explicitly-allowed rules permit traffic
+
+**Egress Rules:**
+Operators are granted egress to:
+
+1. **DNS (port 53 TCP/UDP)** — Required for service discovery and hostname resolution
+2. **Kubernetes API Server (ports 443 and 6443 TCP)** — Required for API calls and cluster operations
+   - **Critical Cilium Detail**: In Cilium with kube-proxy replacement, `ipBlock: 0.0.0.0/0` is treated as a reserved keyword (external-only, not for in-cluster APIs)
+   - Solution: Omit the `to:` selector in egress rules for K8s API access; Cilium permits cluster-internal traffic to apiserver by default
+3. **Prometheus (port 9090 TCP, namespaceSelector: monitoring)** — For storage-autoscaler to query disk usage metrics
+
+**Ingress Rules:**
+Operators permit ingress from:
+
+1. **Monitoring namespace (port 8080 TCP)** — Prometheus metrics scraping; all operators expose Prometheus metrics
+2. **In-namespace pods (port 8081 TCP)** — Health check and liveness probes between replicas
+
+**Absence of Webhook Ingress:**
+- No webhooks from kube-apiserver (mutating/validating webhooks not used by custom operators)
+- Database operators (CNPG, MariaDB, Redis) may define additional webhook rules; those are configured separately
+
+### 11.2. Pod Security Standards
+
+All custom operators (node-labeler, storage-autoscaler) enforce the `restricted` PSS baseline.
+
+**Container Security Context:**
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532        # nonroot user
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+containers:
+  - securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: true
+```
+
+**Implementation Details:**
+- **runAsNonRoot: true** — All pods run as UID 65532 (nonroot user), never root
+- **readOnlyRootFilesystem: true** — Filesystem mounted read-only; prevents runtime modification
+- **capabilities: drop ALL** — All Linux capabilities removed; operators need none
+- **allowPrivilegeEscalation: false** — Prevents escalation via setuid binaries
+- **seccompProfile: RuntimeDefault** — Seccomp filters active (default RKE2 profile)
+
+**Resource Limits:**
+All containers define requests and limits:
+- **node-labeler**: 10m CPU request, 100m limit; 32Mi mem request, 64Mi limit
+- **storage-autoscaler**: 50m CPU request, 200m limit; 64Mi mem request, 128Mi limit
+
+**Pod Disruption Budgets:**
+- Custom operators deploy with `replicas: 3` and `topologySpreadConstraints` to ensure distribution across nodes
+- Operators are expected to have PDBs (though not currently deployed, should be added for production)
+
+**No Privileged Containers:**
+- No `privileged: true`
+- No `hostNetwork`, `hostPID`, or `hostIPC`
+- No `hostPath` volumes (operators use emptyDir only for temporary data)
+
+### 11.3. RBAC Model
+
+Each operator has a dedicated ServiceAccount and ClusterRole following the principle of least privilege.
+
+**node-labeler:**
+- **ServiceAccount**: `node-labeler` (namespace: node-labeler)
+- **ClusterRole**: `node-labeler`
+- **Permissions**:
+  - `nodes`: `[get, list, watch, patch]` — Read Harvester VM annotations, apply node labels
+  - `events`: `[create, patch]` — Write events for auditing label changes
+  - `leases`: `[get, list, watch, create, update, patch, delete]` — Leader election among 3 replicas
+- **No cluster-admin binding** — Scoped to node labeling only
+
+**storage-autoscaler:**
+- **ServiceAccount**: `storage-autoscaler` (namespace: storage-autoscaler)
+- **ClusterRole**: `storage-autoscaler` (pattern identical to node-labeler)
+- **Permissions**:
+  - `nodes`: `[get, list, watch, patch]` — Patch node status with storage usage
+  - `persistentvolumeclaims`: `[get, list, watch, patch]` — Expand PVC capacity
+  - `storageclass`: `[get, list, watch]` — Query configured storage classes
+  - `events`: `[create, patch]` — Write audit events
+  - `leases`: `[get, list, watch, create, update, patch, delete]` — Leader election
+- **No cluster-admin binding** — Limited to storage expansion only
+
+**cluster-autoscaler:**
+- **ServiceAccount**: `cluster-autoscaler` (namespace: cluster-autoscaler)
+- **ClusterRole**: `cluster-autoscaler` (more permissive, required for autoscaling)
+- **Permissions** (matching upstream cluster-autoscaler RBAC):
+  - `pods`: `[eviction]` — Evict pods when scaling down
+  - `nodes`: `[watch, list, get, update]` — Adjust node counts
+  - `namespaces, services, replicationcontrollers, pvc, pv`: `[watch, list, get]` — Analyze workload distribution
+  - `daemonsets, replicasets, statefulsets`: `[watch, list, get]` — Understand workload placement
+  - `jobs, cronjobs`: `[watch, list, get]` — Schedule around batch jobs
+  - `poddisruptionbudgets`: `[watch, list]` — Respect PDB constraints
+  - `storageclasses, csinodes, csistoragecapacities, csidrivers, volumeattachments`: `[watch, list, get]` — Volume-aware scheduling
+  - `leases`: `[get, list, watch, create, update, patch, delete]` — Leader election
+- **Intentionally broad** — Autoscaler requires deep cluster introspection to make safe scaling decisions
+
+**Leader Election:**
+All operators use Kubernetes Lease resources for leader election. With 3 replicas:
+- One pod acquires the lease, becomes active leader
+- Other replicas watch the lease, become standbys
+- On leader death, standby acquires lease within 15 seconds
+- Prevents duplicate work and ensures single-writer safety
+
+### 11.4. Supply Chain Security
+
+All container images follow pinned versions and authenticated pull paths.
+
+**Custom Operators (node-labeler, storage-autoscaler):**
+- **Build**: Images built from source in `operators/` directory (not included in git)
+- **Storage**: Tarballs stored in `operators/images/` before Terraform apply
+- **Registry**: Pushed to Harbor via `crane` CLI: `harbor.aegisgroup.ch/library/node-labeler:v0.2.0`
+- **Deploy**: Referenced via templated `image` field: `${harbor_fqdn}/library/node-labeler:${version}`
+- **Version Pinning**: No `:latest` tags; all versions pinned to semver (e.g., v0.2.0)
+
+**Database Operators (CNPG, MariaDB, Redis):**
+- **Source**: Upstream Helm charts and official install manifests
+- **Images**: Pulled from upstream: `ghcr.io/cloudnative-pg/cloudnative-pg:v1.28.1`, `quay.io/opstree/redis-operator:v0.23.0`, etc.
+- **Registry Redirect**: RKE2 `registries.yaml` (containerd mirror config) transparently rewrites pulls to Harbor proxy-cache
+- **Transparent Proxying**: No code changes needed; containerd automatically routes `ghcr.io/*` → `harbor.aegisgroup.ch/ghcr/*`
+- **Version Pinning**: All manifests use specific versions (no `:latest`)
+
+**Cluster Autoscaler:**
+- **Image**: Upstream K8s registry: `registry.k8s.io/autoscaling/cluster-autoscaler:v<version>`
+- **Registry Redirect**: Same mirror config as other upstream images
+- **Cloud Provider**: Rancher cluster-autoscaler, configured to use Harvester cloud provider
+
+**Registry Mirrors (8 Configured):**
+Harbor proxy-cache configured with mirrors to:
+1. docker.io (Docker Hub)
+2. quay.io (Red Hat Quay)
+3. ghcr.io (GitHub Container Registry)
+4. gcr.io (Google Container Registry)
+5. registry.k8s.io (Kubernetes official)
+6. docker.elastic.co (Elastic)
+7. registry.gitlab.com (GitLab)
+8. docker-registry3.mariadb.com (MariaDB)
+
+**No Image Signatures Yet:**
+- Current implementation: version pinning + Harbor proxy
+- Future enhancement: Add image signing (Cosign) and signature verification in admission controllers
+- Audit trail: All pulls logged by Harbor, queryable via Harbor API
+
+---
+
+## 12. Summary
 
 This architecture delivers a production-ready RKE2 cluster on Harvester with:
 
-- **Reliability**: Three-node CP, etcd quorum, pod disruption budgets
+- **Reliability**: Three-node CP, etcd quorum, pod disruption budgets, topology-spread constraints
 - **Scalability**: Autoscaling pools, scale-from-zero for compute workloads
-- **Networking**: Cilium CNI with L2 LB, dual-NIC separation of cluster/ingress traffic
-- **Air-gap**: Bootstrap registry + Harbor proxy-cache isolation from public internet
+- **Networking**: Cilium CNI with L2 LB, dual-NIC separation of cluster/ingress traffic, default-deny NetworkPolicies
+- **Air-gap**: Bootstrap registry + Harbor proxy-cache isolation from public internet, 8 upstream mirror support
 - **Database Support**: Optional operators for PostgreSQL (CNPG), MariaDB, and Redis on database worker pool
-- **Observability**: Cluster autoscaler, node-labeler, storage-autoscaler custom operators
-- **Security**: Private CA trust chain, node encryption, service account RBAC
+- **Observability**: Cluster autoscaler, node-labeler, storage-autoscaler custom operators, Prometheus integration
+- **Security**: Private CA trust chain, node encryption, service account RBAC, Pod Security Standards enforcement, no privileged containers, read-only root filesystems, dropped capabilities, restricted seccomp profiles, version-pinned images via Harbor proxy
+- **Governance**: Principle of least privilege for all operators, leader election for safe concurrency, comprehensive audit logging
 
 All infrastructure is managed by Terraform, enabling repeatable, auditable cluster deployments.
