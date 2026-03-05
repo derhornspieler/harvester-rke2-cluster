@@ -495,10 +495,12 @@ resource "null_resource" "deploy_cluster_autoscaler" {
         --dry-run=client -o yaml | kubectl apply -f -
 
       # Create CA cert secret with the combined bundle for Rancher TLS verification.
+      # Use --server-side to avoid the 262144-byte annotation limit on
+      # last-applied-configuration (the combined bundle can exceed this).
       kubectl create secret generic cluster-autoscaler-ca-cert \
         -n cluster-autoscaler \
         --from-file=ca.crt="$${ca_bundle}" \
-        --dry-run=client -o yaml | kubectl apply -f -
+        --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f -
 
       # Clean up sensitive files immediately after creating secrets
       rm -f "${local.rendered_dir}/cluster-autoscaler-cloud-config" \
