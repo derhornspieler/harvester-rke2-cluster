@@ -442,11 +442,49 @@ resource "null_resource" "deploy_cluster_autoscaler" {
         kubectl apply -f "${path.module}/operators/manifests/cluster-autoscaler/$f"
       done
 
-      # Write cloud-config and CA cert to rendered directory (avoids shell
-      # escaping issues with multiline data inside Terraform local-exec).
-      # These are passed via environment variables from Terraform.
+      # Write cloud-config to rendered directory (avoids shell escaping
+      # issues with multiline data inside Terraform local-exec).
       printf '%s\n' "$CLOUD_CONFIG" > "${local.rendered_dir}/cluster-autoscaler-cloud-config"
-      printf '%s\n' "$CA_CERT" > "${local.rendered_dir}/cluster-autoscaler-ca-cert.pem"
+
+      # Build a combined CA bundle so the autoscaler trusts Rancher's TLS
+      # regardless of whether Rancher uses a public CA, private CA, or a
+      # CA different from private_ca_pem (common in airgapped deployments).
+      #
+      # Bundle = Rancher server cert chain + private_ca_pem + system CAs
+      ca_bundle="${local.rendered_dir}/cluster-autoscaler-ca-cert.pem"
+
+      # 1. Fetch the Rancher server's certificate chain via openssl.
+      #    We use -servername for SNI and extract all certs in the chain.
+      rancher_host=$(echo "$RANCHER_URL" | sed -E 's|https?://||;s|/.*||;s|:.*||')
+      rancher_port=$(echo "$RANCHER_URL" | sed -nE 's|https?://[^:/]+(:[0-9]+).*|\1|p' | tr -d ':')
+      rancher_port="$${rancher_port:-443}"
+
+      echo "Fetching CA certificate chain from Rancher at $${rancher_host}:$${rancher_port}..."
+      if openssl s_client -connect "$${rancher_host}:$${rancher_port}" \
+           -servername "$${rancher_host}" -showcerts </dev/null 2>/dev/null \
+           | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' > "$${ca_bundle}.rancher" \
+           && [ -s "$${ca_bundle}.rancher" ]; then
+        echo "Rancher certificate chain retrieved successfully."
+      else
+        echo "WARNING: Could not fetch Rancher certificate chain; continuing with provided CA only."
+        : > "$${ca_bundle}.rancher"
+      fi
+
+      # 2. Start the combined bundle with the fetched Rancher chain
+      cp "$${ca_bundle}.rancher" "$${ca_bundle}"
+
+      # 3. Append the private CA (always provided via Terraform variable)
+      printf '%s\n' "$CA_CERT" >> "$${ca_bundle}"
+
+      # 4. Append system CA bundle for public CA trust
+      for sys_ca in /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
+        if [ -f "$${sys_ca}" ]; then
+          cat "$${sys_ca}" >> "$${ca_bundle}"
+          break
+        fi
+      done
+
+      rm -f "$${ca_bundle}.rancher"
 
       # Create cloud-config secret for Rancher API access.
       # The autoscaler uses this to authenticate with Rancher and adjust
@@ -456,16 +494,15 @@ resource "null_resource" "deploy_cluster_autoscaler" {
         --from-file=cloud-config="${local.rendered_dir}/cluster-autoscaler-cloud-config" \
         --dry-run=client -o yaml | kubectl apply -f -
 
-      # Create CA cert secret for Rancher TLS verification.
-      # The private CA is needed because Rancher uses an internal CA.
+      # Create CA cert secret with the combined bundle for Rancher TLS verification.
       kubectl create secret generic cluster-autoscaler-ca-cert \
         -n cluster-autoscaler \
-        --from-file=ca.crt="${local.rendered_dir}/cluster-autoscaler-ca-cert.pem" \
+        --from-file=ca.crt="$${ca_bundle}" \
         --dry-run=client -o yaml | kubectl apply -f -
 
       # Clean up sensitive files immediately after creating secrets
       rm -f "${local.rendered_dir}/cluster-autoscaler-cloud-config" \
-            "${local.rendered_dir}/cluster-autoscaler-ca-cert.pem"
+            "$${ca_bundle}"
 
       # Apply rendered deployment (with correct image version and scale-down params)
       kubectl apply -f "${local.rendered_dir}/cluster-autoscaler-deployment.yaml"
@@ -478,6 +515,7 @@ resource "null_resource" "deploy_cluster_autoscaler" {
     SCRIPT
 
     environment = {
+      RANCHER_URL = var.rancher_url
       CLOUD_CONFIG = join("\n", [
         "url: ${var.rancher_url}",
         "token: ${var.rancher_token}",
