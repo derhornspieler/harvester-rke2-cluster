@@ -36,3 +36,11 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    # Allow Redis/Sentinel connectivity (operator must reach managed pods)
+    - ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+        - port: 9121
+          protocol: TCP
