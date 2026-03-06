@@ -67,7 +67,7 @@ locals {
           externalIPs: true
           loadBalancerIPs: true
 
-    - path: /var/lib/rancher/rke2/server/manifests/vault-root-ca-placeholder.yaml
+    - path: /var/lib/rancher/rke2/server/manifests/vault-root-ca.yaml
       permissions: '0644'
       content: |
         apiVersion: v1
@@ -76,7 +76,8 @@ locals {
           name: vault-root-ca
           namespace: kube-system
         data:
-          ca.crt: ""
+          ca.crt: |
+            ${indent(8, var.private_ca_pem)}
 
     - path: /etc/pki/ca-trust/source/anchors/private-ca.pem
       permissions: '0644'
