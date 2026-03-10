@@ -70,8 +70,8 @@ load_config() {
   [[ -z "${K8S_VERSION:-}" ]]    && die "K8S_VERSION not set in .env"
   [[ -z "${PRIVATE_CA_PEM}" ]]   && die "PRIVATE_CA_PEM_FILE is empty: ${PRIVATE_CA_PEM_FILE}"
 
-  # Image full name for disk_info
-  IMAGE_FULL_NAME="${VM_NAMESPACE}/${GOLDEN_IMAGE_NAME}"
+  # Image full name for disk_info (IMAGE_NAMESPACE allows image in a different namespace)
+  IMAGE_FULL_NAME="${IMAGE_NAMESPACE:-${VM_NAMESPACE}}/${GOLDEN_IMAGE_NAME}"
 
   # Base64-encode CA PEM for registries config
   CA_BUNDLE_B64=$(echo "${PRIVATE_CA_PEM}" | base64 -w0)
