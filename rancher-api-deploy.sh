@@ -528,6 +528,7 @@ rke2-traefik:
     type: LoadBalancer
     spec:
       loadBalancerIP: "${TRAEFIK_LB_IP}"
+      loadBalancerClass: "io.cilium/l2"
   providers:
     kubernetesGateway:
       enabled: true

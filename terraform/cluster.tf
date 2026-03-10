@@ -223,7 +223,8 @@ resource "rancher2_cluster_v2" "rke2" {
         service = {
           type = "LoadBalancer"
           spec = {
-            loadBalancerIP = var.traefik_lb_ip
+            loadBalancerIP      = var.traefik_lb_ip
+            loadBalancerClass   = "io.cilium/l2"
           }
         }
         providers = {
