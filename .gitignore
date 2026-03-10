@@ -6,6 +6,10 @@
 tfplan*
 terraform.tfvars
 
+# Shell script environment config
+.env
+private-ca.pem
+
 # Sensitive credential files
 kubeconfig-*.yaml
 harvester-cloud-provider-kubeconfig

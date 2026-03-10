@@ -6,10 +6,10 @@
 # Uses curl to call Rancher's Steve & v3 APIs directly.
 #
 # Prerequisites:
-#   - Run ./prepare.sh -r first to refresh credentials
-#   - terraform.tfvars must exist with valid values
-#   - kubeconfig-harvester-cloud-cred.yaml must exist
-#   - harvester-cloud-provider-kubeconfig must exist
+#   - .env file must exist in the script directory with valid values
+#   - PRIVATE_CA_PEM_FILE must point to a file containing the private CA PEM
+#   - CLOUD_PROVIDER_KUBECONFIG_FILE must point to the cloud provider kubeconfig
+#   - CLOUD_CRED_KUBECONFIG_FILE must point to the cloud credential kubeconfig
 #
 # Usage:
 #   ./rancher-api-deploy.sh            # Create cluster
@@ -39,98 +39,36 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 die()       { log_error "$@"; exit 1; }
 
 # -----------------------------------------------------------------------------
-# Parse terraform.tfvars
-# -----------------------------------------------------------------------------
-read_tfvar() {
-  local key="$1"
-  awk -F'"' "/^${key}[[:space:]]/ {print \$2}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
-}
-
-read_tfvar_unquoted() {
-  local key="$1"
-  awk "/^${key}[[:space:]]*=/ {gsub(/.*=[[:space:]]*/, \"\"); gsub(/[[:space:]]*#.*/, \"\"); print}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
-}
-
-read_tfvar_multiline() {
-  local key="$1"
-  awk "/^${key}[[:space:]]*=.*<<-?EOT/{found=1; next} found && /^EOT/{found=0; next} found" \
-    "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
-}
-
-# -----------------------------------------------------------------------------
-# Load configuration from terraform.tfvars
+# Load configuration from .env
 # -----------------------------------------------------------------------------
 load_config() {
-  log_info "Loading configuration from terraform.tfvars..."
+  local env_file="${SCRIPT_DIR}/.env"
+  [[ -f "${env_file}" ]] || die ".env file not found: ${env_file}"
 
-  RANCHER_URL=$(read_tfvar rancher_url)
-  RANCHER_TOKEN=$(read_tfvar rancher_token)
-  CLUSTER_NAME=$(read_tfvar cluster_name)
-  K8S_VERSION=$(read_tfvar kubernetes_version)
-  CNI=$(read_tfvar cni)
-  TRAEFIK_LB_IP=$(read_tfvar traefik_lb_ip)
-  CILIUM_LB_POOL_START=$(read_tfvar cilium_lb_pool_start)
-  CILIUM_LB_POOL_STOP=$(read_tfvar cilium_lb_pool_stop)
+  log_info "Loading configuration from .env..."
 
-  VM_NAMESPACE=$(read_tfvar vm_namespace)
-  HARVESTER_NETWORK_NAME=$(read_tfvar harvester_network_name)
-  HARVESTER_NETWORK_NS=$(read_tfvar harvester_network_namespace)
-  SERVICES_NETWORK_NAME=$(read_tfvar harvester_services_network_name)
-  SERVICES_NETWORK_NS=$(read_tfvar harvester_services_network_namespace)
+  # shellcheck source=/dev/null
+  source "${env_file}"
 
-  GOLDEN_IMAGE_NAME=$(read_tfvar golden_image_name)
-  HARVESTER_CLUSTER_ID=$(read_tfvar harvester_cluster_id)
-  CLOUD_CRED_NAME=$(read_tfvar harvester_cloud_credential_name)
+  # Read file-based values
+  [[ -z "${PRIVATE_CA_PEM_FILE:-}" ]]            && die "PRIVATE_CA_PEM_FILE not set in .env"
+  [[ -f "${PRIVATE_CA_PEM_FILE}" ]]              || die "PRIVATE_CA_PEM_FILE not found: ${PRIVATE_CA_PEM_FILE}"
+  PRIVATE_CA_PEM=$(cat "${PRIVATE_CA_PEM_FILE}")
 
-  BOOTSTRAP_REGISTRY=$(read_tfvar bootstrap_registry)
-  HARBOR_FQDN=$(read_tfvar harbor_fqdn)
+  [[ -z "${CLOUD_PROVIDER_KUBECONFIG_FILE:-}" ]] && die "CLOUD_PROVIDER_KUBECONFIG_FILE not set in .env"
+  [[ -f "${CLOUD_PROVIDER_KUBECONFIG_FILE}" ]]   || die "CLOUD_PROVIDER_KUBECONFIG_FILE not found: ${CLOUD_PROVIDER_KUBECONFIG_FILE}"
+  CLOUD_PROVIDER_KUBECONFIG=$(cat "${CLOUD_PROVIDER_KUBECONFIG_FILE}")
 
-  SSH_USER=$(read_tfvar ssh_user)
-
-  DOCKERHUB_USERNAME=$(read_tfvar dockerhub_username)
-  DOCKERHUB_TOKEN=$(read_tfvar dockerhub_token)
-
-  # Numeric values
-  CP_COUNT=$(read_tfvar_unquoted controlplane_count)
-  CP_CPU=$(read_tfvar controlplane_cpu)
-  CP_MEM=$(read_tfvar controlplane_memory)
-  CP_DISK=$(read_tfvar_unquoted controlplane_disk_size)
-
-  GEN_CPU=$(read_tfvar general_cpu)
-  GEN_MEM=$(read_tfvar general_memory)
-  GEN_DISK=$(read_tfvar_unquoted general_disk_size)
-  GEN_MIN=$(read_tfvar_unquoted general_min_count)
-  GEN_MAX=$(read_tfvar_unquoted general_max_count)
-
-  COMP_CPU=$(read_tfvar compute_cpu)
-  COMP_MEM=$(read_tfvar compute_memory)
-  COMP_DISK=$(read_tfvar_unquoted compute_disk_size)
-  COMP_MIN=$(read_tfvar_unquoted compute_min_count)
-  COMP_MAX=$(read_tfvar_unquoted compute_max_count)
-
-  DB_CPU=$(read_tfvar database_cpu)
-  DB_MEM=$(read_tfvar database_memory)
-  DB_DISK=$(read_tfvar_unquoted database_disk_size)
-  DB_MIN=$(read_tfvar_unquoted database_min_count)
-  DB_MAX=$(read_tfvar_unquoted database_max_count)
-
-  # SSH keys (extract from list)
-  SSH_KEY=$(awk '/ssh_authorized_keys/,/\]/' "${SCRIPT_DIR}/terraform.tfvars" \
-    | grep -oP '(?<=")ssh-[^"]+' | head -1)
-
-  # Private CA PEM
-  PRIVATE_CA_PEM=$(read_tfvar_multiline private_ca_pem)
-
-  # Cloud provider kubeconfig content
-  CLOUD_PROVIDER_KUBECONFIG=$(cat "${SCRIPT_DIR}/harvester-cloud-provider-kubeconfig")
-  CLOUD_CRED_KUBECONFIG=$(cat "${SCRIPT_DIR}/kubeconfig-harvester-cloud-cred.yaml")
+  [[ -z "${CLOUD_CRED_KUBECONFIG_FILE:-}" ]]     && die "CLOUD_CRED_KUBECONFIG_FILE not set in .env"
+  [[ -f "${CLOUD_CRED_KUBECONFIG_FILE}" ]]       || die "CLOUD_CRED_KUBECONFIG_FILE not found: ${CLOUD_CRED_KUBECONFIG_FILE}"
+  CLOUD_CRED_KUBECONFIG=$(cat "${CLOUD_CRED_KUBECONFIG_FILE}")
 
   # Validate required fields
-  [[ -z "${RANCHER_URL}" ]]    && die "rancher_url not found in terraform.tfvars"
-  [[ -z "${RANCHER_TOKEN}" ]]  && die "rancher_token not found in terraform.tfvars"
-  [[ -z "${CLUSTER_NAME}" ]]   && die "cluster_name not found in terraform.tfvars"
-  [[ -z "${K8S_VERSION}" ]]    && die "kubernetes_version not found in terraform.tfvars"
-  [[ -z "${PRIVATE_CA_PEM}" ]] && die "private_ca_pem not found in terraform.tfvars"
+  [[ -z "${RANCHER_URL:-}" ]]    && die "RANCHER_URL not set in .env"
+  [[ -z "${RANCHER_TOKEN:-}" ]]  && die "RANCHER_TOKEN not set in .env"
+  [[ -z "${CLUSTER_NAME:-}" ]]   && die "CLUSTER_NAME not set in .env"
+  [[ -z "${K8S_VERSION:-}" ]]    && die "K8S_VERSION not set in .env"
+  [[ -z "${PRIVATE_CA_PEM}" ]]   && die "PRIVATE_CA_PEM_FILE is empty: ${PRIVATE_CA_PEM_FILE}"
 
   # Image full name for disk_info
   IMAGE_FULL_NAME="${VM_NAMESPACE}/${GOLDEN_IMAGE_NAME}"

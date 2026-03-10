@@ -70,35 +70,9 @@ Steps performed (in order):
 Prerequisites:
   - kubectl, terraform, jq, curl must be installed
   - kubeconfig-harvester.yaml must exist (or 'harvester' context in ~/.kube/config)
-  - terraform.tfvars must contain rancher_url, rancher_token, cluster_name, vm_namespace
+  - .env must contain RANCHER_URL, RANCHER_TOKEN, CLUSTER_NAME, VM_NAMESPACE, PRIVATE_CA_PEM_FILE
 EOF
   exit 0
-}
-
-# Extract a quoted tfvars value by variable name
-_get_tfvar_value() {
-  awk -F'"' "/^${1}[[:space:]]/ {print \$2}" "${SCRIPT_DIR}/terraform.tfvars" 2>/dev/null || echo ""
-}
-
-# Extract a heredoc tfvars value (multiline, between <<-EOT and EOT).
-# Usage: _get_tfvar_heredoc private_ca_pem
-# Returns the content between the start marker and EOT.
-_get_tfvar_heredoc() {
-  local key="$1"
-  local in_block=0
-  while IFS= read -r line; do
-    if [[ "$in_block" -eq 0 && "$line" =~ ^${key}[[:space:]]*=.*EOT$ ]]; then
-      # Found start of multi-line heredoc
-      in_block=1
-      continue
-    elif [[ "$in_block" -eq 1 ]]; then
-      if [[ "$line" == "EOT" ]]; then
-        return 0
-      fi
-      echo "$line"
-    fi
-  done < "${SCRIPT_DIR}/terraform.tfvars"
-  return 0
 }
 
 check_prerequisites() {
@@ -132,19 +106,17 @@ check_connectivity() {
 }
 
 load_config() {
-  if [[ ! -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
-    die "terraform.tfvars not found in ${SCRIPT_DIR}"
+  if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
+    die ".env not found in ${SCRIPT_DIR}"
   fi
 
-  RANCHER_URL=$(_get_tfvar_value rancher_url)
-  RANCHER_TOKEN=$(_get_tfvar_value rancher_token)
-  CLUSTER_NAME=$(_get_tfvar_value cluster_name)
-  VM_NAMESPACE=$(_get_tfvar_value vm_namespace)
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/.env"
 
-  [[ -z "$RANCHER_URL" ]]    && die "rancher_url not set in terraform.tfvars"
-  [[ -z "$RANCHER_TOKEN" ]]  && die "rancher_token not set in terraform.tfvars"
-  [[ -z "$CLUSTER_NAME" ]]   && die "cluster_name not set in terraform.tfvars"
-  [[ -z "$VM_NAMESPACE" ]]   && die "vm_namespace not set in terraform.tfvars"
+  [[ -z "${RANCHER_URL:-}" ]]    && die "RANCHER_URL not set in .env"
+  [[ -z "${RANCHER_TOKEN:-}" ]]  && die "RANCHER_TOKEN not set in .env"
+  [[ -z "${CLUSTER_NAME:-}" ]]   && die "CLUSTER_NAME not set in .env"
+  [[ -z "${VM_NAMESPACE:-}" ]]   && die "VM_NAMESPACE not set in .env"
 
   AUTH_HEADER="Authorization: Bearer ${RANCHER_TOKEN}"
 
@@ -160,7 +132,11 @@ _create_rancher_kubeconfig() {
 
   # Try to get private CA PEM; if available, use it for TLS verification
   local private_ca_pem ca_data cert_auth_line
-  private_ca_pem=$(_get_tfvar_heredoc private_ca_pem)
+  if [[ -n "${PRIVATE_CA_PEM_FILE:-}" && -f "${PRIVATE_CA_PEM_FILE}" ]]; then
+    private_ca_pem=$(cat "${PRIVATE_CA_PEM_FILE}")
+  else
+    private_ca_pem=""
+  fi
 
   if [[ -n "$private_ca_pem" ]]; then
     # Base64 encode the CA PEM for kubeconfig
