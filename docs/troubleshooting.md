@@ -2,10 +2,21 @@
 
 This guide covers common issues encountered during RKE2 cluster deployment on Harvester, diagnostic procedures, and remediation steps. It includes Mermaid decision trees for diagnosis and restoration procedures for failed deploys.
 
+## Primary Deployment Tool
+
+As of commit `eed0815`, **rancher-api-deploy.sh** is the primary cluster lifecycle tool. This guide documents both `rancher-api-deploy.sh` operations and Terraform reference material (preserved in `terraform/` subdirectory).
+
+| Tool | When to Use |
+|------|-----------|
+| rancher-api-deploy.sh | Default for all new deployments, CI/CD, scripting |
+| Terraform (terraform/) | Reference implementation, state-managed deployments (not actively developed) |
+
+For `rancher-api-deploy.sh` failures, check stderr and try `--dry-run` to inspect generated payloads. Terraform issues refer to section 2 below.
+
 ## Table of Contents
 
 1. [Deployment Failures](#1-deployment-failures)
-2. [Terraform State Issues](#2-terraform-state-issues)
+2. [Terraform State Issues](#2-terraform-state-issues) (reference)
 3. [Cluster Health Issues](#3-cluster-health-issues)
 4. [Operator Deployment Issues](#4-operator-deployment-issues)
 5. [Cleanup & Destroy Procedures](#5-cleanup--destroy-procedures)

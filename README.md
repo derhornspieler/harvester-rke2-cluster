@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-cluster/actions/workflows/ci.yml) [![Terraform](https://img.shields.io/badge/terraform-%3E%3D1.5.0-blue?logo=terraform)](https://www.terraform.io/) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-Standalone Terraform project that provisions a production-ready RKE2 Kubernetes cluster on Harvester via the Rancher API. Airgap-first architecture with golden image deployment, Harbor proxy-cache registry, Cilium CNI, and autoscaling worker pools.
+Provisions a production-ready RKE2 Kubernetes cluster on Harvester via the Rancher API. Supports two deployment modes: **Terraform** (IaC, state-managed) or **rancher-api-deploy.sh** (imperative API calls, no state). Airgap-first architecture with golden image deployment, Harbor proxy-cache registry, Cilium CNI, and autoscaling worker pools.
 
 ## Overview
 
-This Terraform module orchestrates the creation of a fully managed RKE2 cluster across Harvester hypervisor resources. It:
+This project orchestrates the creation of a fully managed RKE2 cluster across Harvester hypervisor resources. Both deployment modes provide:
 
 - Provisions a 3-node control plane pool (dedicated, no workloads)
 - Deploys autoscaling worker pools (general, compute, database) with scale-from-zero support
@@ -15,6 +15,16 @@ This Terraform module orchestrates the creation of a fully managed RKE2 cluster 
 - Integrates Harbor as a pull-through registry cache (8 upstream registries)
 - Deploys custom operators: node-labeler and storage-autoscaler
 - Optionally deploys database operators: CloudNativePG (PostgreSQL), MariaDB, OpsTree Redis
+
+### Deployment Mode Comparison
+
+| Aspect | Terraform | rancher-api-deploy.sh |
+|--------|-----------|----------------------|
+| **State Management** | Kubernetes backend (shared) | None (API-based, repeatable) |
+| **Idempotency** | Full (safe to re-apply) | Partial (skips existing resources) |
+| **Modes** | apply / destroy | create / --dry-run / --update / --delete |
+| **Use Case** | Team environments, CI/CD | One-off provisioning, scripting |
+| **Learning** | Longer (HCL, providers) | Shorter (just Bash + curl) |
 
 ## Architecture
 
@@ -89,8 +99,9 @@ Install locally on the machine running Terraform:
 
 ### Step 1: Prepare Credentials and Kubeconfigs
 
+Both deployment modes require the same credential setup:
+
 ```bash
-cd cluster
 ./prepare.sh
 ```
 
@@ -105,7 +116,7 @@ This generates:
 Edit `terraform.tfvars` and fill in the required values (examples in `terraform.tfvars.example`):
 
 ```bash
-# Critical settings
+# Critical settings (used by both Terraform and rancher-api-deploy.sh)
 rancher_url                                = "https://rancher.example.com"
 rancher_token                              = "token-xxxxx:yyyyyy"
 harvester_kubeconfig_path                  = "./kubeconfig-harvester.yaml"
@@ -117,29 +128,40 @@ harbor_fqdn                                = "harbor.example.com"
 private_ca_pem                             = "-----BEGIN CERTIFICATE-----\n..."
 ```
 
-### Step 3: Initialize Terraform
+### Step 3: Choose Your Deployment Mode
+
+#### Option A: Terraform (recommended for team environments)
 
 ```bash
-terraform init
-```
-
-This initializes the Terraform working directory and configures the Kubernetes backend for state storage.
-
-### Step 4: Review and Apply
-
-```bash
+cd terraform
+terraform init      # Initializes Kubernetes backend for state storage
 terraform plan
 terraform apply
 ```
 
-Cluster provisioning typically takes 20–40 minutes. Monitor via:
+Monitor provisioning:
 ```bash
-# Get the RKE2 kubeconfig
 terraform output -raw kubeconfig_rke2 > ~/.kube/config-rke2
-
-# Watch cluster come up
 kubectl --kubeconfig ~/.kube/config-rke2 get nodes -w
 ```
+
+#### Option B: rancher-api-deploy.sh (recommended for scripting, one-off deployments)
+
+```bash
+# Review what will be created (no API calls)
+./rancher-api-deploy.sh --dry-run
+
+# Create the cluster
+./rancher-api-deploy.sh
+
+# Update existing cluster (e.g., Kubernetes version)
+./rancher-api-deploy.sh --update
+
+# Delete cluster
+./rancher-api-deploy.sh --delete
+```
+
+Cluster provisioning typically takes 20–40 minutes. Monitor via Rancher UI or kubectl with the returned kubeconfig.
 
 ## Documentation
 
@@ -410,6 +432,8 @@ When running `terraform.sh`, secrets are automatically synced to K8s and back.
 
 ### Scaling Workers
 
+#### Using rancher-api-deploy.sh
+
 Edit `terraform.tfvars` and adjust `*_min_count` / `*_max_count`:
 
 ```hcl
@@ -417,8 +441,17 @@ general_min_count  = 6   # Increased from 4
 compute_max_count  = 15  # Increased from 10
 ```
 
-Then apply:
+Then update:
 ```bash
+./rancher-api-deploy.sh --update
+```
+
+#### Using Terraform
+
+Edit `terraform.tfvars` and adjust `*_min_count` / `*_max_count`, then:
+
+```bash
+cd terraform
 terraform plan
 terraform apply
 ```
@@ -427,14 +460,25 @@ Cluster autoscaler respects the new bounds. (Terraform ignores live quantity dri
 
 ### Upgrading RKE2
 
-Change `kubernetes_version`:
+#### Using rancher-api-deploy.sh
+
+Edit `terraform.tfvars` and change `kubernetes_version`:
 
 ```hcl
 kubernetes_version = "v1.35.0+rke2r1"  # Was v1.34.2+rke2r1
 ```
 
-Apply:
+Then update:
 ```bash
+./rancher-api-deploy.sh --update
+```
+
+#### Using Terraform
+
+Edit `terraform.tfvars` and change `kubernetes_version`, then:
+
+```bash
+cd terraform
 terraform apply
 ```
 
@@ -458,7 +502,22 @@ To replace a node (e.g., due to disk corruption):
 
 ### Destroy Cluster
 
-Use `destroy-cluster.sh` to safely tear down the RKE2 cluster:
+#### Using rancher-api-deploy.sh
+
+```bash
+./rancher-api-deploy.sh --delete
+```
+
+#### Using Terraform
+
+```bash
+cd terraform
+./terraform.sh destroy   # Interactive
+# or
+terraform destroy       # Direct destroy
+```
+
+For safe cleanup that preserves cloud credentials for re-provisioning, use the wrapper scripts:
 
 ```bash
 ./destroy-cluster.sh              # Interactive (prompts for confirmation)
@@ -614,24 +673,28 @@ kubectl rollout restart -n kube-system ds/cilium
 ```
 .
 ├── README.md                          # This file
+├── terraform.tfvars                   # Configuration (gitignored)
 ├── terraform.tfvars.example           # Template configuration
-├── versions.tf                        # Required Terraform/provider versions
-├── providers.tf                       # Rancher2 provider config
-├── variables.tf                       # Variable definitions
-├── outputs.tf                         # Cluster outputs (ID, kubeconfig, etc.)
 │
-├── cluster.tf                         # Main cluster + machine pools
-├── machine_config.tf                  # Node cloud-init, user data
-├── cloud_credential.tf                # Harvester cloud credential
-├── image.tf                           # Golden image data source
-├── efi.tf                             # EFI patches for initial bootstrap
-│
-├── operators.tf                       # node-labeler + storage-autoscaler
-│
-├── prepare.sh                         # First-time credential prep
-├── terraform.sh                       # State backend sync + destroy wrapper
+├── prepare.sh                         # First-time credential prep (both modes)
+├── rancher-api-deploy.sh              # Imperative deployment via Rancher API
+│                                      # Modes: create, --dry-run, --update, --delete
 ├── destroy-cluster.sh                 # Convenience destroy wrapper
 ├── nuke-cluster.sh                    # Nuclear cleanup for stuck resources
+│
+├── terraform/                         # Terraform IaC deployment (archived, reference only)
+│   ├── versions.tf                    # Required Terraform/provider versions
+│   ├── providers.tf                   # Rancher2 provider config
+│   ├── variables.tf                   # Variable definitions
+│   ├── outputs.tf                     # Cluster outputs (ID, kubeconfig, etc.)
+│   ├── cluster.tf                     # Main cluster + machine pools
+│   ├── machine_config.tf              # Node cloud-init, user data
+│   ├── cloud_credential.tf            # Harvester cloud credential
+│   ├── image.tf                       # Golden image data source
+│   ├── efi.tf                         # EFI patches for initial bootstrap
+│   ├── operators.tf                   # node-labeler + storage-autoscaler
+│   ├── terraform.sh                   # State backend sync + destroy wrapper
+│   └── .terraform.lock.hcl
 │
 ├── operators/
 │   ├── images/                        # OCI image tarballs (gitignored)
@@ -651,25 +714,48 @@ kubectl rollout restart -n kube-system ds/cilium
 │   ├── storage-autoscaler/            # storage-autoscaler source code
 │   └── push-images.sh                 # Pushes images to Harbor via crane
 │
+├── docs/                              # Additional documentation
+│   ├── architecture.md                # Deep-dive technical architecture
+│   ├── operations.md                  # Operations runbooks and procedures
+│   └── troubleshooting.md             # Troubleshooting guide with decision trees
+│
 ├── .gitignore                         # Excludes secrets, state, tarballs
 └── examples/                          # Reference configurations
 ```
 
+### Migration Notes
+
+As of commit `eed0815`, the Terraform files have been moved to `terraform/` subdirectory and `rancher-api-deploy.sh` is now the primary cluster lifecycle tool. Both tools read from the same `terraform.tfvars` configuration file. **Terraform deployment is preserved for reference but no longer actively developed.**
+
 ## Contributing
 
-This project follows standard Terraform and GitOps conventions. When contributing:
+This project follows standard Terraform and Bash scripting conventions. When contributing:
 
-1. Use `terraform fmt` to format all `.tf` files
-2. Validate with `terraform validate`
+### For rancher-api-deploy.sh changes
+1. Use ShellCheck (`shellcheck rancher-api-deploy.sh`) to validate
+2. Maintain `set -euo pipefail` for safety
+3. Test `--dry-run` mode first (shows JSON payloads without API calls)
+4. Test against a non-production cluster with all three modes: create, --update, --delete
+5. Keep error messages clear and helpful
+6. Document any new Rancher API endpoints used
+
+### For Terraform changes (terraform/ subdirectory)
+1. Use `terraform fmt terraform/` to format all `.tf` files
+2. Validate with `cd terraform && terraform validate`
 3. Test against a non-production cluster first
 4. Keep variable descriptions clear and concise
 5. Update `terraform.tfvars.example` when adding new variables
 6. Document breaking changes in commit messages
 
+### For all changes
+- Update `terraform.tfvars.example` if adding new variables
+- Document breaking changes in commit messages
+- Update relevant documentation in `docs/` when behavior changes
+
 Pull requests should include:
-- Clear description of changes
-- Any new or modified variables
-- Testing results (cluster provisioning, operator deployment, etc.)
+- Clear description of changes (which tool, which variables, which features)
+- Testing results (provisioning, operator deployment, scaling, upgrades, deletion)
+- Documentation updates if applicable
 
 ## License
 

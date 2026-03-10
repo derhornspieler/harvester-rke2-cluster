@@ -2,7 +2,12 @@
 
 ## Overview
 
-This document provides a technical deep-dive into the Harvester-based RKE2 cluster provisioning system. The Terraform codebase in this repository orchestrates the creation of a production-grade Kubernetes cluster on Harvester hypervisor infrastructure, integrated with Rancher management, Harbor container registry, and automated node management via custom operators.
+This document provides a technical deep-dive into the Harvester-based RKE2 cluster provisioning system. Two complementary deployment tools are available:
+
+1. **rancher-api-deploy.sh** (primary) — Imperative provisioning via Rancher API (curl-based, no state management)
+2. **Terraform** (reference) — Infrastructure-as-code deployment with state management (archived in `terraform/` subdirectory)
+
+Both read from the same `terraform.tfvars` configuration and orchestrate the creation of a production-grade Kubernetes cluster on Harvester hypervisor infrastructure, integrated with Rancher management, Harbor container registry, and automated node management via custom operators.
 
 **Key characteristics:**
 - Golden image-first deployment (no vanilla OS downloads)
@@ -82,7 +87,51 @@ graph TB
 
 ---
 
-## 2. Terraform Resource Dependency Graph
+## 2. Deployment Tool Comparison
+
+### rancher-api-deploy.sh
+
+A stateless Bash script that provisions clusters using the Rancher Steve API (v3) and v1 Kubernetes API directly via `curl`. All configuration is read from `terraform.tfvars`.
+
+**Execution flow:**
+```
+Load config from terraform.tfvars
+  ↓
+Create cloud credential (if not exists)
+  ↓
+Create Docker Hub secret (if credentials provided)
+  ↓
+Build cloud-init user data for each node pool
+  ↓
+Create HarvesterConfig machine configs via Rancher Steve API
+  ↓
+Create machine deployments for each pool
+  ↓
+Create cluster via Rancher v3 API
+  ↓
+Monitor cluster bootstrap and node joins
+  ↓
+Deploy operators (node-labeler, storage-autoscaler, DB operators)
+```
+
+**Modes:**
+- `./rancher-api-deploy.sh` — Create cluster
+- `./rancher-api-deploy.sh --dry-run` — Show JSON payloads without API calls
+- `./rancher-api-deploy.sh --update` — Update existing cluster (K8s version, pool sizes, etc.)
+- `./rancher-api-deploy.sh --delete` — Delete cluster and associated resources
+
+### Terraform (Reference, Archived)
+
+Infrastructure-as-code approach with state management via Kubernetes backend. Terraform files are preserved in `terraform/` subdirectory for reference; **no longer actively developed**.
+
+**Execution flow:**
+The Terraform configuration follows this dependency chain:
+
+---
+
+## 3. Terraform Resource Dependency Graph
+
+(For reference; Terraform deployment preserved but not actively used)
 
 The Terraform configuration follows this dependency chain. Understanding the flow is critical for deployment troubleshooting:
 
