@@ -732,6 +732,7 @@ As of commit `eed0815`, the Terraform files have been moved to `terraform/` subd
 This project follows standard Terraform and Bash scripting conventions. When contributing:
 
 ### For rancher-api-deploy.sh changes
+
 1. Use ShellCheck (`shellcheck rancher-api-deploy.sh`) to validate
 2. Maintain `set -euo pipefail` for safety
 3. Test `--dry-run` mode first (shows JSON payloads without API calls)
@@ -740,6 +741,7 @@ This project follows standard Terraform and Bash scripting conventions. When con
 6. Document any new Rancher API endpoints used
 
 ### For Terraform changes (terraform/ subdirectory)
+
 1. Use `terraform fmt terraform/` to format all `.tf` files
 2. Validate with `cd terraform && terraform validate`
 3. Test against a non-production cluster first
@@ -748,6 +750,7 @@ This project follows standard Terraform and Bash scripting conventions. When con
 6. Document breaking changes in commit messages
 
 ### For all changes
+
 - Update `terraform.tfvars.example` if adding new variables
 - Document breaking changes in commit messages
 - Update relevant documentation in `docs/` when behavior changes
