@@ -262,7 +262,8 @@ resource "rancher2_cluster_v2" "rke2" {
         }
         env = [{ name = "SSL_CERT_FILE", value = "/combined-ca/ca-certificates.crt" }]
         additionalArguments = [
-          "--api.dashboard=false",
+          "--api.dashboard=true",
+          "--api.insecure=true",
           "--entryPoints.web.transport.respondingTimeouts.readTimeout=1800s",
           "--entryPoints.web.transport.respondingTimeouts.writeTimeout=1800s",
           "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=1800s",
