@@ -106,12 +106,12 @@ check_connectivity() {
 }
 
 load_config() {
-  if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
-    die ".env not found in ${SCRIPT_DIR}"
+  if [[ ! -f "${SCRIPT_DIR}/deploy-api/.env" ]]; then
+    die ".env not found in ${SCRIPT_DIR}/deploy-api/"
   fi
 
   # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/.env"
+  source "${SCRIPT_DIR}/deploy-api/.env"
 
   [[ -z "${RANCHER_URL:-}" ]]    && die "RANCHER_URL not set in .env"
   [[ -z "${RANCHER_TOKEN:-}" ]]  && die "RANCHER_TOKEN not set in .env"

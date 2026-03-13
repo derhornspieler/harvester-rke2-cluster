@@ -345,11 +345,11 @@ ensure_terraform_state_ns() {
 }
 
 # -----------------------------------------------------------------------------
-# terraform.tfvars generation (for Terraform — lives in terraform/)
+# terraform.tfvars generation (for Terraform — lives in deploy-terraform/)
 # -----------------------------------------------------------------------------
 generate_tfvars() {
-  local source="${SCRIPT_DIR}/terraform/terraform.tfvars.example"
-  local output="${SCRIPT_DIR}/terraform.tfvars"
+  local source="${SCRIPT_DIR}/deploy-terraform/terraform.tfvars.example"
+  local output="${SCRIPT_DIR}/deploy-terraform/terraform.tfvars"
   confirm_overwrite "${output}" || return 0
 
   log_info "Generating terraform.tfvars from example..."
@@ -373,8 +373,8 @@ generate_tfvars() {
 # .env generation (for rancher-api-deploy.sh / nuke-cluster.sh)
 # -----------------------------------------------------------------------------
 generate_env() {
-  local source="${SCRIPT_DIR}/.env.example"
-  local output="${SCRIPT_DIR}/.env"
+  local source="${SCRIPT_DIR}/deploy-api/.env.example"
+  local output="${SCRIPT_DIR}/deploy-api/.env"
   confirm_overwrite "${output}" || return 0
 
   log_info "Generating .env from example..."
@@ -406,7 +406,7 @@ print_summary() {
 
   echo -e "${BOLD}Files created:${NC}"
   for f in kubeconfig-harvester.yaml kubeconfig-harvester-cloud-cred.yaml \
-           harvester-cloud-provider-kubeconfig .env terraform.tfvars; do
+           harvester-cloud-provider-kubeconfig deploy-api/.env deploy-terraform/terraform.tfvars; do
     if [[ -f "${SCRIPT_DIR}/${f}" ]]; then
       echo -e "  ${GREEN}+${NC} ${f}"
     else
@@ -417,7 +417,7 @@ print_summary() {
   echo ""
   echo -e "${BOLD}${YELLOW}Manual edits required:${NC}"
   echo ""
-  echo -e "  ${BOLD}In .env (for rancher-api-deploy.sh):${NC}"
+  echo -e "  ${BOLD}In deploy-api/.env (for rancher-api-deploy.sh):${NC}"
   echo "    - GOLDEN_IMAGE_NAME            (must exist on Harvester)"
   echo "    - HARVESTER_NETWORK_NAME/NS    (VM network)"
   echo "    - BOOTSTRAP_REGISTRY           (bootstrap registry FQDN)"
@@ -427,13 +427,13 @@ print_summary() {
   echo "    - TRAEFIK_LB_IP / CILIUM_LB_* (load balancer IP range)"
   echo "    - Node pool sizing             (CPU, memory, disk, counts)"
   echo ""
-  echo -e "  ${BOLD}In terraform.tfvars (for Terraform, if used):${NC}"
+  echo -e "  ${BOLD}In deploy-terraform/terraform.tfvars (for Terraform, if used):${NC}"
   echo "    - Same values as above in HCL format"
 
   echo ""
   echo -e "${BOLD}Next steps:${NC}"
-  echo "  Option A (recommended): ./rancher-api-deploy.sh --dry-run"
-  echo "  Option B (Terraform):   cd terraform && terraform init && terraform plan"
+  echo "  Option A (recommended): ./deploy-api/rancher-api-deploy.sh --dry-run"
+  echo "  Option B (Terraform):   cd deploy-terraform && terraform init && terraform plan"
   echo ""
 }
 
@@ -459,16 +459,16 @@ print_refresh_summary() {
 
   echo ""
   echo -e "${BOLD}Updated credentials in:${NC}"
-  if [[ -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
-    echo -e "  ${GREEN}+${NC} terraform.tfvars  (rancher_token, harvester_cloud_credential_name)"
+  if [[ -f "${SCRIPT_DIR}/deploy-terraform/terraform.tfvars" ]]; then
+    echo -e "  ${GREEN}+${NC} deploy-terraform/terraform.tfvars  (rancher_token, harvester_cloud_credential_name)"
   fi
-  if [[ -f "${SCRIPT_DIR}/.env" ]]; then
-    echo -e "  ${GREEN}+${NC} .env              (RANCHER_TOKEN, CLOUD_CRED_NAME)"
+  if [[ -f "${SCRIPT_DIR}/deploy-api/.env" ]]; then
+    echo -e "  ${GREEN}+${NC} deploy-api/.env              (RANCHER_TOKEN, CLOUD_CRED_NAME)"
   fi
   echo ""
   echo -e "${BOLD}Next steps:${NC}"
-  echo "  Option A (recommended): ./rancher-api-deploy.sh --dry-run"
-  echo "  Option B (Terraform):   cd terraform && terraform init && terraform plan"
+  echo "  Option A (recommended): ./deploy-api/rancher-api-deploy.sh --dry-run"
+  echo "  Option B (Terraform):   cd deploy-terraform && terraform init && terraform plan"
   echo ""
 }
 
@@ -481,17 +481,17 @@ refresh_credentials() {
   check_prerequisites false
 
   # Read existing settings from .env (preferred) or terraform.tfvars (fallback)
-  if [[ -f "${SCRIPT_DIR}/.env" ]]; then
-    log_info "Reading existing settings from .env..."
+  if [[ -f "${SCRIPT_DIR}/deploy-api/.env" ]]; then
+    log_info "Reading existing settings from deploy-api/.env..."
     # shellcheck source=/dev/null
-    source "${SCRIPT_DIR}/.env"
-  elif [[ -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
-    log_info "Reading existing settings from terraform.tfvars (no .env found)..."
+    source "${SCRIPT_DIR}/deploy-api/.env"
+  elif [[ -f "${SCRIPT_DIR}/deploy-terraform/terraform.tfvars" ]]; then
+    log_info "Reading existing settings from deploy-terraform/terraform.tfvars (no .env found)..."
     RANCHER_URL=$(read_tfvar rancher_url)
     CLUSTER_NAME=$(read_tfvar cluster_name)
     VM_NAMESPACE=$(read_tfvar vm_namespace)
   else
-    die "Neither .env nor terraform.tfvars found — run full setup first"
+    die "Neither deploy-api/.env nor deploy-terraform/terraform.tfvars found — run full setup first"
   fi
 
   [[ -z "${RANCHER_URL:-}" ]]   && die "RANCHER_URL not found in config"
@@ -568,23 +568,23 @@ KUBECONFIG
 
   # Update credential fields in terraform.tfvars (in-place)
   local cloud_cred_name="${CLUSTER_NAME}-harvester"
-  if [[ -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
-    log_info "Updating credentials in terraform.tfvars..."
+  if [[ -f "${SCRIPT_DIR}/deploy-terraform/terraform.tfvars" ]]; then
+    log_info "Updating credentials in deploy-terraform/terraform.tfvars..."
     sed -i \
       -e "s|rancher_token.*=.*|rancher_token = \"${API_TOKEN}\"|" \
       -e "s|harvester_cloud_credential_name.*=.*|harvester_cloud_credential_name = \"${cloud_cred_name}\"|" \
-      "${SCRIPT_DIR}/terraform.tfvars"
-    log_ok "Updated rancher_token and harvester_cloud_credential_name in terraform.tfvars"
+      "${SCRIPT_DIR}/deploy-terraform/terraform.tfvars"
+    log_ok "Updated rancher_token and harvester_cloud_credential_name in deploy-terraform/terraform.tfvars"
   fi
 
   # Update credential fields in .env (in-place)
-  if [[ -f "${SCRIPT_DIR}/.env" ]]; then
-    log_info "Updating credentials in .env..."
+  if [[ -f "${SCRIPT_DIR}/deploy-api/.env" ]]; then
+    log_info "Updating credentials in deploy-api/.env..."
     sed -i \
       -e "s|^RANCHER_TOKEN=.*|RANCHER_TOKEN=\"${API_TOKEN}\"|" \
       -e "s|^CLOUD_CRED_NAME=.*|CLOUD_CRED_NAME=\"${cloud_cred_name}\"|" \
-      "${SCRIPT_DIR}/.env"
-    log_ok "Updated RANCHER_TOKEN and CLOUD_CRED_NAME in .env"
+      "${SCRIPT_DIR}/deploy-api/.env"
+    log_ok "Updated RANCHER_TOKEN and CLOUD_CRED_NAME in deploy-api/.env"
   fi
 
   # Ensure Terraform state namespace
@@ -599,6 +599,16 @@ KUBECONFIG
 # -----------------------------------------------------------------------------
 full_setup() {
   check_prerequisites
+
+  # Warn if old-location config files exist
+  if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    log_warn "Found .env at old location (project root)."
+    log_warn "Config now lives in deploy-api/.env — please re-run prepare.sh."
+  fi
+  if [[ -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
+    log_warn "Found terraform.tfvars at old location (project root)."
+    log_warn "Config now lives in deploy-terraform/terraform.tfvars — please re-run prepare.sh."
+  fi
 
   # Gather Rancher connection details
   prompt_value "Rancher URL (https://...)" "" RANCHER_URL
@@ -657,10 +667,10 @@ main() {
   echo ""
 
   if [[ "${refresh_mode}" == true ]]; then
-    if [[ -f "${SCRIPT_DIR}/.env" || -f "${SCRIPT_DIR}/terraform.tfvars" ]]; then
+    if [[ -f "${SCRIPT_DIR}/deploy-api/.env" || -f "${SCRIPT_DIR}/deploy-terraform/terraform.tfvars" ]]; then
       refresh_credentials
     else
-      log_warn "No .env or terraform.tfvars found — running full setup instead"
+      log_warn "No deploy-api/.env or deploy-terraform/terraform.tfvars found — running full setup instead"
       full_setup
     fi
   else

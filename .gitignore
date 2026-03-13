@@ -1,13 +1,16 @@
 # Terraform state and providers
 .terraform/
+deploy-terraform/.terraform/
 .terraform.lock.hcl
 *.tfstate*
 *.tfplan
 tfplan*
 terraform.tfvars
+deploy-terraform/terraform.tfvars
 
 # Shell script environment config
 .env
+deploy-api/.env
 private-ca.pem
 
 # Sensitive credential files
@@ -24,6 +27,9 @@ operators/images/*.tar.gz
 
 # Internal planning documents (local working docs, not public)
 docs/plans/
+
+# Wiki working directory (managed by sync-wiki.sh)
+.wiki/
 
 # Claude Code agent memory (local, not shared)
 .claude/

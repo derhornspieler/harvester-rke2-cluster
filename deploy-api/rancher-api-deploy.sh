@@ -21,6 +21,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # -----------------------------------------------------------------------------
 # Colors & Logging
@@ -49,6 +50,14 @@ load_config() {
 
   # shellcheck source=/dev/null
   source "${env_file}"
+
+  # Resolve relative credential paths against REPO_ROOT
+  [[ "${PRIVATE_CA_PEM_FILE:-}" != /* ]] && [[ -n "${PRIVATE_CA_PEM_FILE:-}" ]] && \
+    PRIVATE_CA_PEM_FILE="${REPO_ROOT}/${PRIVATE_CA_PEM_FILE#../}"
+  [[ "${CLOUD_PROVIDER_KUBECONFIG_FILE:-}" != /* ]] && [[ -n "${CLOUD_PROVIDER_KUBECONFIG_FILE:-}" ]] && \
+    CLOUD_PROVIDER_KUBECONFIG_FILE="${REPO_ROOT}/${CLOUD_PROVIDER_KUBECONFIG_FILE#../}"
+  [[ "${CLOUD_CRED_KUBECONFIG_FILE:-}" != /* ]] && [[ -n "${CLOUD_CRED_KUBECONFIG_FILE:-}" ]] && \
+    CLOUD_CRED_KUBECONFIG_FILE="${REPO_ROOT}/${CLOUD_CRED_KUBECONFIG_FILE#../}"
 
   # Read file-based values
   [[ -z "${PRIVATE_CA_PEM_FILE:-}" ]]            && die "PRIVATE_CA_PEM_FILE not set in .env"

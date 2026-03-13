@@ -394,21 +394,21 @@ variable "bootstrap_registry_ca_pem" {
 # -----------------------------------------------------------------------------
 
 variable "deploy_operators" {
-  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, cluster-autoscaler, and optionally DB operators)"
+  description = "Deploy operators after cluster creation (node-labeler, storage-autoscaler, cluster-autoscaler, and optionally DB operators). Default OFF — production uses Fleet GitOps."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deploy_cluster_autoscaler" {
   description = "Deploy Kubernetes cluster-autoscaler with Rancher cloud provider (requires deploy_operators = true)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deploy_cnpg" {
   description = "Deploy CloudNativePG operator (requires deploy_operators = true)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deploy_mariadb_operator" {
@@ -420,7 +420,7 @@ variable "deploy_mariadb_operator" {
 variable "deploy_redis_operator" {
   description = "Deploy OpsTree Redis Operator (requires deploy_operators = true)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "harbor_admin_user" {

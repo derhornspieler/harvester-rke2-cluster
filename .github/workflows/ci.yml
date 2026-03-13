@@ -76,9 +76,11 @@ jobs:
           terraform_version: "~> 1.5"
 
       - name: Initialize (no backend)
+        working-directory: deploy-terraform
         run: terraform init -backend=false
 
       - name: Validate configuration
+        working-directory: deploy-terraform
         run: terraform validate
 
   # ---------------------------------------------------------------------------
@@ -97,9 +99,11 @@ jobs:
           tflint_version: "v0.54.0"
 
       - name: Initialize TFLint
+        working-directory: deploy-terraform
         run: tflint --init
 
       - name: Run TFLint
+        working-directory: deploy-terraform
         run: tflint --format compact
 
   # ---------------------------------------------------------------------------
@@ -189,7 +193,7 @@ jobs:
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@f99709f8ccc3496220c987b7d8729653237c23dc # v12.1347.0
         with:
-          directory: .
+          directory: deploy-terraform
           framework: terraform
           quiet: true
           soft_fail: false

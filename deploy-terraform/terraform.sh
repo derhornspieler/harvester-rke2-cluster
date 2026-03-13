@@ -16,12 +16,14 @@ die()       { log_error "$*"; exit 1; }
 
 # --- Constants ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARVESTER_KUBECONFIG="${SCRIPT_DIR}/kubeconfig-harvester.yaml"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+HARVESTER_KUBECONFIG="${REPO_ROOT}/kubeconfig-harvester.yaml"
 TF_NAMESPACE="terraform-state"
 KUBECTL="kubectl --kubeconfig=${HARVESTER_KUBECONFIG}"
 
 # Files to store as secrets (parallel arrays: filename -> secret name)
-SECRET_FILENAMES=("terraform.tfvars" "kubeconfig-harvester.yaml" "kubeconfig-harvester-cloud-cred.yaml" "harvester-cloud-provider-kubeconfig" "vault-init.json")
+# Paths relative to REPO_ROOT for credential files, SCRIPT_DIR for terraform.tfvars
+SECRET_FILENAMES=("${SCRIPT_DIR}/terraform.tfvars" "${REPO_ROOT}/kubeconfig-harvester.yaml" "${REPO_ROOT}/kubeconfig-harvester-cloud-cred.yaml" "${REPO_ROOT}/harvester-cloud-provider-kubeconfig" "${REPO_ROOT}/vault-init.json")
 SECRET_NAMES=("terraform-tfvars" "kubeconfig-harvester" "kubeconfig-harvester-cloud-cred" "harvester-cloud-provider-kubeconfig" "vault-init")
 
 # --- Helper Functions ---
@@ -138,18 +140,19 @@ push_secrets() {
   log_info "Pushing local files to K8s secrets in ${TF_NAMESPACE}..."
   local pushed=0
   for i in "${!SECRET_FILENAMES[@]}"; do
-    local file="${SECRET_FILENAMES[$i]}"
+    local filepath="${SECRET_FILENAMES[$i]}"
     local secret_name="${SECRET_NAMES[$i]}"
-    local filepath="${SCRIPT_DIR}/${file}"
+    local filename
+    filename="$(basename "${filepath}")"
     if [[ -f "$filepath" ]]; then
       $KUBECTL create secret generic "$secret_name" \
-        --from-file="${file}=${filepath}" \
+        --from-file="${filename}=${filepath}" \
         --namespace="$TF_NAMESPACE" \
         --dry-run=client -o yaml | $KUBECTL apply -f -
-      log_ok "  ${secret_name} <- ${file}"
+      log_ok "  ${secret_name} <- ${filename}"
       pushed=$((pushed + 1))
     else
-      log_warn "  Skipping ${file} (not found)"
+      log_warn "  Skipping ${filename} (not found)"
     fi
   done
   log_ok "Pushed ${pushed} secret(s)"
@@ -159,17 +162,18 @@ pull_secrets() {
   log_info "Pulling secrets from ${TF_NAMESPACE} to local files..."
   local pulled=0
   for i in "${!SECRET_FILENAMES[@]}"; do
-    local file="${SECRET_FILENAMES[$i]}"
+    local filepath="${SECRET_FILENAMES[$i]}"
     local secret_name="${SECRET_NAMES[$i]}"
-    local filepath="${SCRIPT_DIR}/${file}"
+    local filename
+    filename="$(basename "${filepath}")"
     if $KUBECTL get secret "$secret_name" -n "$TF_NAMESPACE" &>/dev/null; then
       local tmpfile
       tmpfile=$(mktemp)
       $KUBECTL get secret "$secret_name" -n "$TF_NAMESPACE" -o json \
-        | jq -r ".data[\"${file}\"]" | base64 -d > "$tmpfile"
+        | jq -r ".data[\"${filename}\"]" | base64 -d > "$tmpfile"
       mv "$tmpfile" "$filepath"
       chmod 600 "$filepath"
-      log_ok "  ${file} <- ${secret_name}"
+      log_ok "  ${filename} <- ${secret_name}"
       pulled=$((pulled + 1))
     else
       log_warn "  Skipping ${secret_name} (not found in cluster)"
