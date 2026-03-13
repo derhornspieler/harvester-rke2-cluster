@@ -80,14 +80,14 @@ resource "null_resource" "operator_kubeconfig" {
       sed \
         -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
         -e 's|$${version}|${local.operators["node-labeler"].version}|g' \
-        "${path.module}/operators/templates/node-labeler-deployment.yaml.tftpl" \
+        "${path.module}/../operators/templates/node-labeler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/node-labeler-deployment.yaml"
 
       # Render storage-autoscaler deployment template
       sed \
         -e 's|$${harbor_fqdn}|${var.harbor_fqdn}|g' \
         -e 's|$${version}|${local.operators["storage-autoscaler"].version}|g' \
-        "${path.module}/operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
+        "${path.module}/../operators/templates/storage-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/storage-autoscaler-deployment.yaml"
 
       # Render cluster-autoscaler deployment template
@@ -97,7 +97,7 @@ resource "null_resource" "operator_kubeconfig" {
         -e 's|$${scale_down_delay_after_delete}|${var.autoscaler_scale_down_delay_after_delete}|g' \
         -e 's|$${scale_down_unneeded_time}|${var.autoscaler_scale_down_unneeded_time}|g' \
         -e 's|$${scale_down_utilization_threshold}|${var.autoscaler_scale_down_utilization_threshold}|g' \
-        "${path.module}/operators/templates/cluster-autoscaler-deployment.yaml.tftpl" \
+        "${path.module}/../operators/templates/cluster-autoscaler-deployment.yaml.tftpl" \
         > "${local.rendered_dir}/cluster-autoscaler-deployment.yaml"
 
       # Note: DB operator templates no longer rendered here.
@@ -125,13 +125,13 @@ resource "null_resource" "operator_image_push" {
   }
 
   provisioner "local-exec" {
-    command = "${path.module}/operators/push-images.sh"
+    command = "${path.module}/../operators/push-images.sh"
     environment = {
       HARBOR_FQDN     = var.harbor_fqdn
       HARBOR_USER     = var.harbor_admin_user
       HARBOR_PASSWORD = var.harbor_admin_password
       HARBOR_CA_PEM   = var.private_ca_pem
-      IMAGES_DIR      = "${path.module}/operators/images"
+      IMAGES_DIR      = "${path.module}/../operators/images"
     }
   }
 
@@ -193,7 +193,7 @@ resource "null_resource" "deploy_node_labeler" {
 
       # Apply static manifests (namespace, rbac, service, hpa, networkpolicy)
       for f in namespace.yaml rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/node-labeler/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/node-labeler/$f"
       done
 
       # Apply rendered deployment (with correct Harbor image reference)
@@ -231,11 +231,11 @@ resource "null_resource" "deploy_storage_autoscaler" {
       echo "Deploying storage-autoscaler ${local.operators["storage-autoscaler"].version}..."
 
       # Apply CRD first — must exist before the controller starts
-      kubectl apply -f "${path.module}/operators/manifests/storage-autoscaler/crd.yaml"
+      kubectl apply -f "${path.module}/../operators/manifests/storage-autoscaler/crd.yaml"
 
       # Apply static manifests (namespace, rbac, service, hpa, networkpolicy)
       for f in namespace.yaml rbac.yaml service.yaml hpa.yaml networkpolicy.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/storage-autoscaler/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/storage-autoscaler/$f"
       done
 
       # Apply rendered deployment (with correct Harbor image reference)
@@ -273,7 +273,7 @@ resource "null_resource" "deploy_cnpg" {
       echo "Deploying CloudNativePG ${local.db_operators["cnpg"].version}..."
 
       # Apply upstream install manifest (CRDs, RBAC, Deployment, Webhooks, Service — all-in-one)
-      kubectl apply --server-side -f "${path.module}/operators/upstream/cnpg-${local.db_operators["cnpg"].version}.yaml"
+      kubectl apply --server-side -f "${path.module}/../operators/upstream/cnpg-${local.db_operators["cnpg"].version}.yaml"
 
       # Patch deployment to schedule on database pool nodes
       kubectl patch deployment cnpg-controller-manager -n cnpg-system --type=json \
@@ -281,7 +281,7 @@ resource "null_resource" "deploy_cnpg" {
 
       # Apply our additions (NetworkPolicy, HPA, PDB)
       for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/cnpg-system/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/cnpg-system/$f"
       done
 
       # Wait for rollout to complete
@@ -323,11 +323,11 @@ resource "null_resource" "deploy_mariadb_operator" {
       kubectl create namespace mariadb-operator --dry-run=client -o yaml | kubectl apply -f -
 
       # Apply CRDs from separate chart (helm template --include-crds doesn't work)
-      kubectl apply --server-side -f "${path.module}/operators/upstream/mariadb-operator-crds-${local.db_operators["mariadb-operator"].version}.yaml"
+      kubectl apply --server-side -f "${path.module}/../operators/upstream/mariadb-operator-crds-${local.db_operators["mariadb-operator"].version}.yaml"
 
       # Apply upstream Helm-rendered manifest (RBAC, Deployment, cert-controller, webhook)
       # Note: -n flag needed because helm template doesn't embed namespace in all resources
-      kubectl apply --server-side -n mariadb-operator -f "${path.module}/operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
+      kubectl apply --server-side -n mariadb-operator -f "${path.module}/../operators/upstream/mariadb-operator-${local.db_operators["mariadb-operator"].version}.yaml"
 
       # Patch deployments to schedule on database pool nodes
       for deploy in mariadb-operator mariadb-operator-cert-controller; do
@@ -337,7 +337,7 @@ resource "null_resource" "deploy_mariadb_operator" {
 
       # Apply our additions (NetworkPolicy, HPA, PDB)
       for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/mariadb-operator/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/mariadb-operator/$f"
       done
 
       # Wait for rollout to complete
@@ -379,7 +379,7 @@ resource "null_resource" "deploy_redis_operator" {
       kubectl create namespace redis-operator --dry-run=client -o yaml | kubectl apply -f -
 
       # Apply upstream Helm-rendered manifest (CRDs, RBAC, Deployment)
-      kubectl apply --server-side -n redis-operator -f "${path.module}/operators/upstream/redis-operator-${local.db_operators["redis-operator"].version}.yaml"
+      kubectl apply --server-side -n redis-operator -f "${path.module}/../operators/upstream/redis-operator-${local.db_operators["redis-operator"].version}.yaml"
 
       # Patch deployment to schedule on database pool nodes
       kubectl patch deployment redis-operator -n redis-operator --type=json \
@@ -387,7 +387,7 @@ resource "null_resource" "deploy_redis_operator" {
 
       # Apply our additions (NetworkPolicy, HPA, PDB)
       for f in networkpolicy.yaml hpa.yaml pdb.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/redis-operator/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/redis-operator/$f"
       done
 
       # Wait for rollout to complete
@@ -439,7 +439,7 @@ resource "null_resource" "deploy_cluster_autoscaler" {
 
       # Apply static manifests (namespace, rbac, service, pdb, networkpolicy)
       for f in namespace.yaml rbac.yaml service.yaml pdb.yaml networkpolicy.yaml; do
-        kubectl apply -f "${path.module}/operators/manifests/cluster-autoscaler/$f"
+        kubectl apply -f "${path.module}/../operators/manifests/cluster-autoscaler/$f"
       done
 
       # Write cloud-config to rendered directory (avoids shell escaping

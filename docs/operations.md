@@ -2,13 +2,16 @@
 
 This guide covers routine operational tasks for the RKE2 cluster deployed on Harvester via Rancher. It includes scaling, upgrades, golden image updates, certificate rotation, registry management, backup/recovery, and common troubleshooting workflows.
 
-## Primary Deployment Tool
+## Deployment Methods
 
-As of commit `eed0815`, **rancher-api-deploy.sh** is the primary cluster lifecycle tool. This guide documents both `rancher-api-deploy.sh` operations and Terraform reference material (preserved in `terraform/` subdirectory).
+This guide covers operations for both deployment methods. Configuration files are in separate directories:
+
+- **Rancher API**: `deploy-api/.env` — Edit with your credentials and cluster configuration
+- **Terraform**: `deploy-terraform/terraform.tfvars` — Edit with your infrastructure configuration
 
 All operations documented here work with both tools where applicable. For scaling and upgrades:
-- **rancher-api-deploy.sh**: Edit `terraform.tfvars`, then run `./rancher-api-deploy.sh --update`
-- **Terraform** (reference): Edit `terraform.tfvars`, then run `cd terraform && terraform apply`
+- **Rancher API**: Edit `deploy-api/.env`, then run `./deploy-api/rancher-api-deploy.sh --update`
+- **Terraform**: Edit `deploy-terraform/terraform.tfvars`, then run `cd deploy-terraform && terraform apply`
 
 ## Table of Contents
 
@@ -34,13 +37,34 @@ The cluster has four node pools, three of which autoscale. This section covers m
 
 ### 1.1 Manual Scaling
 
-To change node counts manually, edit `terraform.tfvars` and apply changes.
+To change node counts manually, edit the appropriate configuration file and apply changes.
 
-#### Using rancher-api-deploy.sh (primary)
+#### Using Rancher API Deployment
 
 ```bash
-# Edit terraform.tfvars
-vim terraform.tfvars
+# Edit deploy-api/.env
+vim deploy-api/.env
+
+# Change desired pool counts
+CONTROLPLANE_COUNT=5     # 3, 5, 7, etc. (must be odd for etcd quorum)
+GENERAL_MIN_COUNT=6
+GENERAL_MAX_COUNT=12
+COMPUTE_MIN_COUNT=0     # Scale from zero
+COMPUTE_MAX_COUNT=15
+DATABASE_MIN_COUNT=6
+DATABASE_MAX_COUNT=15
+
+# Update cluster
+./deploy-api/rancher-api-deploy.sh --update
+```
+
+The update is idempotent — it detects what changed and applies only necessary modifications.
+
+#### Using Terraform Deployment
+
+```bash
+# Edit deploy-terraform/terraform.tfvars
+vim deploy-terraform/terraform.tfvars
 
 # Change desired pool counts
 controlplane_count = 5     # 3, 5, 7, etc. (must be odd for etcd quorum)
@@ -51,20 +75,8 @@ compute_max_count  = 15
 database_min_count = 6
 database_max_count = 15
 
-# Update cluster
-./rancher-api-deploy.sh --update
-```
-
-The update is idempotent — it detects what changed and applies only necessary modifications.
-
-#### Using Terraform (reference)
-
-```bash
-# Edit terraform.tfvars (same format as above)
-vim terraform.tfvars
-
 # Plan and apply
-cd terraform
+cd deploy-terraform
 terraform plan
 terraform apply
 # or use the terraform.sh wrapper
@@ -85,20 +97,33 @@ The cluster autoscaler respects min/max bounds and scales live node count based 
 
 #### Node Pool Resource Specifications
 
-Edit pool sizing in `terraform.tfvars`:
+Edit pool sizing in your configuration file:
 
+**Rancher API** (`deploy-api/.env`):
 ```bash
-# General workers
+GENERAL_CPU="4"           # vCPUs
+GENERAL_MEMORY="8"        # GiB
+GENERAL_DISK_SIZE="60"    # GiB
+
+COMPUTE_CPU="8"
+COMPUTE_MEMORY="32"
+COMPUTE_DISK_SIZE="80"
+
+DATABASE_CPU="4"
+DATABASE_MEMORY="16"
+DATABASE_DISK_SIZE="80"
+```
+
+**Terraform** (`deploy-terraform/terraform.tfvars`):
+```hcl
 general_cpu        = "4"      # vCPUs
 general_memory     = "8"      # GiB
 general_disk_size  = 60       # GiB
 
-# Compute workers (for heavy workloads)
 compute_cpu        = "8"
 compute_memory     = "32"
 compute_disk_size  = 80
 
-# Database workers (for stateful services)
 database_cpu       = "4"
 database_memory    = "16"
 database_disk_size = 80
@@ -146,18 +171,32 @@ Nodes are removed if:
 2. **Node has been unneeded for**: `autoscaler_scale_down_unneeded_time` (default: 30 minutes)
 3. **Cooldown has elapsed**: No scale-down for `autoscaler_scale_down_delay_after_delete` (default: 30 minutes) after the last deletion
 
-Edit in `terraform.tfvars`:
-
+**Rancher API**: Edit in `deploy-api/.env`:
 ```bash
+AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="30m0s"          # How long before removal
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="15m0s"       # Grace period after add
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE="30m0s"    # Cooldown after delete
+AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="0.5"   # 50% threshold
+```
+
+**Terraform**: Edit in `deploy-terraform/terraform.tfvars`:
+```hcl
 autoscaler_scale_down_unneeded_time         = "30m0s"  # How long before removal
 autoscaler_scale_down_delay_after_add       = "15m0s"  # Grace period after add
 autoscaler_scale_down_delay_after_delete    = "30m0s"  # Cooldown after delete
 autoscaler_scale_down_utilization_threshold = "0.5"    # 50% threshold
 ```
 
-After changes, apply via Terraform:
+After changes, apply:
 
+**Rancher API**:
 ```bash
+./deploy-api/rancher-api-deploy.sh --update
+```
+
+**Terraform**:
+```bash
+cd deploy-terraform
 ./terraform.sh apply
 ```
 
@@ -177,9 +216,9 @@ These annotations tell the autoscaler: "If a compute node existed, it would have
 
 ### 1.3 Adding a New Node Pool
 
-To add a fourth worker pool (e.g., "gpu" for GPU workloads):
+To add a fourth worker pool (e.g., "gpu" for GPU workloads), you must use the Terraform deployment method. The Rancher API method does not support adding custom pools dynamically.
 
-#### Step 1: Add variables to `variables.tf`
+#### Terraform: Step 1 — Add variables to `deploy-terraform/variables.tf`
 
 ```hcl
 # GPU Worker Pool
@@ -214,7 +253,7 @@ variable "gpu_max_count" {
 }
 ```
 
-#### Step 2: Add machine config to `machine_config.tf`
+#### Terraform: Step 2 — Add machine config to `deploy-terraform/machine_config.tf`
 
 ```hcl
 resource "rancher2_machine_config_v2" "gpu" {
@@ -234,7 +273,7 @@ resource "rancher2_machine_config_v2" "gpu" {
 }
 ```
 
-#### Step 3: Add pool to `cluster.tf`
+#### Terraform: Step 3 — Add pool to `deploy-terraform/cluster.tf`
 
 Insert into `rancher2_cluster_v2.rke2` resource:
 
@@ -274,7 +313,7 @@ machine_pools {
 }
 ```
 
-#### Step 4: Add values to `terraform.tfvars.example`
+#### Terraform: Step 4 — Add values to `deploy-terraform/terraform.tfvars.example`
 
 ```bash
 # GPU Worker Pool
@@ -285,13 +324,14 @@ gpu_min_count  = 0
 gpu_max_count  = 5
 ```
 
-#### Step 5: Apply
+#### Terraform: Step 5 — Apply
 
 ```bash
 # Add values to terraform.tfvars
-vim terraform.tfvars
+vim deploy-terraform/terraform.tfvars
 
 # Plan and apply
+cd deploy-terraform
 ./terraform.sh plan
 ./terraform.sh apply
 ```
@@ -310,32 +350,29 @@ RKE2 rolling updates are controlled via the `kubernetes_version` variable. Ranch
 
    Check the [RKE2 releases page](https://github.com/rancher/rke2/releases) for available versions.
 
-2. **Update `kubernetes_version` in `terraform.tfvars`**:
+2. **Update `kubernetes_version` in your configuration**:
 
-   ```bash
-   # Current
-   kubernetes_version = "v1.34.2+rke2r1"
-
-   # Upgrade to
-   kubernetes_version = "v1.35.1+rke2r1"
-   ```
-
-#### Using rancher-api-deploy.sh (primary)
+#### Rancher API Deployment
 
 ```bash
+# Edit deploy-api/.env
+KUBERNETES_VERSION="v1.35.1+rke2r1"
+
 # Apply the update
-./rancher-api-deploy.sh --update
+./deploy-api/rancher-api-deploy.sh --update
 ```
 
-Rancher begins rolling upgrade:
-- Control plane: 1 CP node at a time (respects max_unavailable=0, max_surge=1)
-- Workers: 1 worker at a time (drain before replacement)
-
-#### Using Terraform (reference)
+#### Terraform Deployment
 
 ```bash
+# Edit deploy-terraform/terraform.tfvars
+# Current:
+kubernetes_version = "v1.34.2+rke2r1"
+# Upgrade to:
+kubernetes_version = "v1.35.1+rke2r1"
+
 # Plan and review
-cd terraform
+cd deploy-terraform
 terraform plan
 # Output shows the cluster's `kubernetes_version` will change.
 # No other changes (Terraform ignores instance count drift from autoscaler).
@@ -369,20 +406,24 @@ kubectl get nodes -o wide
 
 If something goes wrong during upgrade, Rancher does not auto-rollback. To restore:
 
+**Rancher API**:
 ```bash
-# Revert kubernetes_version in terraform.tfvars to the old version
+# Revert kubernetes_version in deploy-api/.env
+KUBERNETES_VERSION="v1.34.2+rke2r1"
+
+./deploy-api/rancher-api-deploy.sh --update
+```
+
+**Terraform**:
+```bash
+# Revert kubernetes_version in deploy-terraform/terraform.tfvars
 kubernetes_version = "v1.34.2+rke2r1"
 
-# Using rancher-api-deploy.sh:
-./rancher-api-deploy.sh --update
-
-# Or using Terraform:
-cd terraform
+cd deploy-terraform
 terraform apply
-
-# This re-triggers the rolling upgrade in reverse
-# Takes the same time as the original upgrade
 ```
+
+This re-triggers the rolling upgrade in reverse. Takes the same time as the original upgrade.
 
 ---
 
@@ -406,15 +447,22 @@ Refer to the golden image builder in `/home/rocky/code/harvester-golden-image/` 
    # Should see: rke2-rocky9-golden-20260301
    ```
 
-2. **Update `terraform.tfvars`**:
+2. **Update your configuration**:
 
+   **Rancher API** (`deploy-api/.env`):
+   ```bash
+   GOLDEN_IMAGE_NAME="rke2-rocky9-golden-20260301"
+   ```
+
+   **Terraform** (`deploy-terraform/terraform.tfvars`):
    ```bash
    golden_image_name = "rke2-rocky9-golden-20260301"
    ```
 
-3. **Validate**:
+3. **Validate (Terraform only)**:
 
    ```bash
+   cd deploy-terraform
    ./terraform.sh validate
    ```
 
@@ -422,7 +470,14 @@ Refer to the golden image builder in `/home/rocky/code/harvester-golden-image/` 
 
 4. **Plan and apply**:
 
+   **Rancher API**:
    ```bash
+   ./deploy-api/rancher-api-deploy.sh --update
+   ```
+
+   **Terraform**:
+   ```bash
+   cd deploy-terraform
    ./terraform.sh plan
    ./terraform.sh apply
    ```
@@ -972,14 +1027,21 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 
 ## 9. Clean Destroy
 
-Use `destroy-cluster.sh` to safely destroy the cluster and all resources:
+Use the appropriate destroy script for your deployment method:
 
+**Rancher API**:
 ```bash
-./destroy-cluster.sh              # Interactive (prompts for confirmation)
-./destroy-cluster.sh -auto-approve  # Non-interactive
+./deploy-api/destroy-cluster.sh              # Interactive (prompts for confirmation)
+./deploy-api/destroy-cluster.sh -auto-approve  # Non-interactive
 ```
 
-This is a convenience wrapper around `terraform.sh destroy`. The cleanup process:
+**Terraform**:
+```bash
+./deploy-terraform/destroy-cluster.sh              # Interactive (prompts for confirmation)
+./deploy-terraform/destroy-cluster.sh -auto-approve  # Non-interactive
+```
+
+The cleanup process:
 
 1. **Delete cluster from Rancher API** — Stops Rancher provisioning
 2. **Wait for VMs to be deleted by CAPI** — Asynchronous deletion
@@ -1026,10 +1088,15 @@ graph TD
 
 ### Troubleshooting Destroy
 
-If `destroy-cluster.sh` hangs:
+**Rancher API**:
+If `deploy-api/destroy-cluster.sh` hangs, use `nuke-cluster.sh` (see section 10 below).
+
+**Terraform**:
+If `deploy-terraform/destroy-cluster.sh` hangs:
 
 ```bash
 # Option 1: Force-unlock if state is locked
+cd deploy-terraform
 ./terraform.sh destroy -lock=false
 
 # Option 2: Check for stuck finalizers on Rancher management cluster
@@ -1046,6 +1113,7 @@ kubectl patch harvestermachines.rke-machine.cattle.io/<name> \
 kubectl --kubeconfig=./kubeconfig-harvester.yaml delete vm -n <vm_namespace> --all
 
 # Then re-run destroy
+cd deploy-terraform
 ./terraform.sh destroy -auto-approve
 ```
 
@@ -1148,22 +1216,22 @@ kubectl get harvestermachines.rke-machine.cattle.io -n fleet-default
 
 ---
 
-## 11. rancher-api-deploy.sh Reference
+## 11. Rancher API Deployment Reference
 
-Primary cluster lifecycle tool (1185 lines) that provisions, updates, and deletes RKE2 clusters via Rancher API (curl-based, no state management).
+The `deploy-api/rancher-api-deploy.sh` script (primary cluster lifecycle tool) provisions, updates, and deletes RKE2 clusters via Rancher API (curl-based, no state management).
 
 ### Modes
 
 #### Default Mode (Create)
 
 ```bash
-./rancher-api-deploy.sh
+./deploy-api/rancher-api-deploy.sh
 ```
 
-Creates a new cluster based on `terraform.tfvars`. Idempotent for existing resources (skips creation if cloud credential, HarvesterConfigs, or cluster already exist).
+Creates a new cluster based on `deploy-api/.env`. Idempotent for existing resources (skips creation if cloud credential, HarvesterConfigs, or cluster already exist).
 
 **Flow**:
-1. Load configuration from terraform.tfvars
+1. Load configuration from `deploy-api/.env`
 2. Create cloud credential (if not exists)
 3. Create Docker Hub auth secret (if credentials provided)
 4. Build cloud-init scripts for each node pool
@@ -1171,13 +1239,13 @@ Creates a new cluster based on `terraform.tfvars`. Idempotent for existing resou
 6. Create machine deployments for each pool
 7. Create cluster resource via Rancher v3 API
 8. Wait for cluster to become active (typically 15-30 minutes)
-9. Deploy operators (node-labeler, storage-autoscaler, CNPG, MariaDB, Redis)
+9. Deploy operators (cluster-autoscaler, storage-autoscaler, optionally node-labeler)
 10. Return kubeconfig
 
 #### Dry-Run Mode
 
 ```bash
-./rancher-api-deploy.sh --dry-run
+./deploy-api/rancher-api-deploy.sh --dry-run
 ```
 
 Show what would be created without making any API calls. Prints all JSON payloads that would be sent to Rancher. Useful for debugging and validation.
@@ -1185,20 +1253,19 @@ Show what would be created without making any API calls. Prints all JSON payload
 #### Update Mode
 
 ```bash
-./rancher-api-deploy.sh --update
+./deploy-api/rancher-api-deploy.sh --update
 ```
 
-Update existing cluster configuration (e.g., Kubernetes version, pool sizes). Detects what changed in `terraform.tfvars` and applies updates to cloud credential, HarvesterConfigs, and cluster resource.
+Update existing cluster configuration (e.g., Kubernetes version, pool sizes). Detects what changed in `deploy-api/.env` and applies updates to cloud credential, HarvesterConfigs, and cluster resource.
 
 **When to use**:
-- Upgrading RKE2 version: change `kubernetes_version`, run `--update`
-- Scaling pools: change `*_min_count` / `*_max_count`, run `--update`
-- Adding/removing node pools: modify tfvars, run `--update`
+- Upgrading RKE2 version: change `KUBERNETES_VERSION`, run `--update`
+- Scaling pools: change `*_MIN_COUNT` / `*_MAX_COUNT`, run `--update`
 
 #### Delete Mode
 
 ```bash
-./rancher-api-deploy.sh --delete
+./deploy-api/rancher-api-deploy.sh --delete
 ```
 
 Delete cluster and associated resources. Cleans up:
@@ -1212,19 +1279,19 @@ Delete cluster and associated resources. Cleans up:
 **Cleanup verification**:
 ```bash
 # After delete, verify cleanup
-./rancher-api-deploy.sh --dry-run
+./deploy-api/rancher-api-deploy.sh --dry-run
 # Should show "Cloud credential already exists" or "Cloud credential does not exist"
 ```
 
 ### Configuration
 
-All modes read from `terraform.tfvars`. Supported variables:
-- `rancher_url`, `rancher_token`
-- `cluster_name`, `kubernetes_version`
-- `controlplane_count`, `general_min_count` / `general_max_count`
-- `compute_min_count` / `compute_max_count`, `database_min_count` / `database_max_count`
-- `golden_image_name`, `bootstrap_registry`, `harbor_fqdn`, `private_ca_pem`
-- `deploy_operators`, `deploy_cnpg`, `deploy_mariadb_operator`, `deploy_redis_operator`
+All modes read from `deploy-api/.env`. Supported variables:
+- `RANCHER_URL`, `RANCHER_TOKEN`
+- `CLUSTER_NAME`, `KUBERNETES_VERSION`
+- `CONTROLPLANE_COUNT`, `GENERAL_MIN_COUNT` / `GENERAL_MAX_COUNT`
+- `COMPUTE_MIN_COUNT` / `COMPUTE_MAX_COUNT`, `DATABASE_MIN_COUNT` / `DATABASE_MAX_COUNT`
+- `GOLDEN_IMAGE_NAME`, `BOOTSTRAP_REGISTRY`, `HARBOR_FQDN`, `PRIVATE_CA_PEM_FILE`
+- `DEPLOY_OPERATORS`, `DEPLOY_CNPG`, `DEPLOY_MARIADB_OPERATOR`, `DEPLOY_REDIS_OPERATOR`
 - All other variables used in cloud-init (SSH keys, memory, CPU, disk, etc.)
 
 ### Troubleshooting
@@ -1265,9 +1332,9 @@ curl -sk -H "Authorization: Bearer $RANCHER_TOKEN" \
 
 ---
 
-## 12. terraform.sh Reference
+## 12. Terraform Deployment Reference
 
-Wrapper script that manages Terraform state in a Kubernetes backend (stored on Harvester). Used only if deploying via Terraform (see `terraform/` subdirectory).
+The `deploy-terraform/terraform.sh` wrapper script manages Terraform state in a Kubernetes backend (stored on Harvester). Used only if deploying via Terraform.
 
 ### Commands
 
@@ -1276,6 +1343,7 @@ Wrapper script that manages Terraform state in a Kubernetes backend (stored on H
 Initialize the Kubernetes backend:
 
 ```bash
+cd deploy-terraform
 ./terraform.sh init
 ```
 
@@ -1285,7 +1353,7 @@ Initialize the Kubernetes backend:
 3. Creates `terraform-state` namespace if missing
 4. Verifies RBAC (can create secrets and leases)
 5. Pushes local files to K8s secrets:
-   - `terraform.tfvars` → `terraform-tfvars` secret
+   - `deploy-terraform/terraform.tfvars` → `terraform-tfvars` secret
    - `kubeconfig-harvester.yaml` → `kubeconfig-harvester` secret
    - `kubeconfig-harvester-cloud-cred.yaml` → `kubeconfig-harvester-cloud-cred` secret
    - `harvester-cloud-provider-kubeconfig` → `harvester-cloud-provider-kubeconfig` secret
@@ -1301,6 +1369,7 @@ Initialize the Kubernetes backend:
 Plan, review, and apply changes:
 
 ```bash
+cd deploy-terraform
 ./terraform.sh apply
 ```
 
@@ -1323,6 +1392,7 @@ Plan, review, and apply changes:
 Destroy cluster and orphaned resources:
 
 ```bash
+cd deploy-terraform
 ./terraform.sh destroy -auto-approve
 ```
 
@@ -1347,6 +1417,7 @@ Destroy cluster and orphaned resources:
 Validate configuration and check prerequisites:
 
 ```bash
+cd deploy-terraform
 ./terraform.sh validate
 ```
 
@@ -1365,11 +1436,12 @@ Validate configuration and check prerequisites:
 Push local files to K8s secrets (already done by `apply` and `destroy`):
 
 ```bash
+cd deploy-terraform
 ./terraform.sh push-secrets
 ```
 
 **Pushes**:
-- `terraform.tfvars`
+- `deploy-terraform/terraform.tfvars`
 - `kubeconfig-harvester.yaml`
 - `kubeconfig-harvester-cloud-cred.yaml`
 - `harvester-cloud-provider-kubeconfig`
@@ -1380,6 +1452,7 @@ Push local files to K8s secrets (already done by `apply` and `destroy`):
 Pull K8s secrets to local files (already done by `apply`):
 
 ```bash
+cd deploy-terraform
 ./terraform.sh pull-secrets
 ```
 
@@ -1392,6 +1465,7 @@ Pull K8s secrets to local files (already done by `apply`):
 Run any Terraform command with automatic secret management:
 
 ```bash
+cd deploy-terraform
 # Examples
 ./terraform.sh plan
 ./terraform.sh state list
@@ -1406,6 +1480,7 @@ Run any Terraform command with automatic secret management:
 If Terraform locks up (e.g., during long cluster creation):
 
 ```bash
+cd deploy-terraform
 # Check what's holding the lock
 ./terraform.sh plan
 # Output: Error acquiring the state lock
@@ -1422,14 +1497,14 @@ terraform force-unlock -force <LOCK_ID>
 **Local files** (gitignored):
 
 ```
-terraform.tfvars                          # Variables
+deploy-terraform/terraform.tfvars         # Variables
 kubeconfig-harvester.yaml                 # Harvester admin kubeconfig
 kubeconfig-harvester-cloud-cred.yaml      # Cloud credential kubeconfig
 harvester-cloud-provider-kubeconfig       # Cloud provider kubeconfig
 .kubeconfig-rke2-operators                # Operator deployment kubeconfig (auto-generated)
 .rendered/                                # Rendered operator manifests
-tfplan_*                                  # Dated plan files
-terraform.tfstate                         # Local state backup (pulled from K8s)
+deploy-terraform/tfplan_*                 # Dated plan files
+deploy-terraform/terraform.tfstate        # Local state backup (pulled from K8s)
 ```
 
 **K8s secrets** (in `terraform-state` namespace on Harvester):
@@ -1461,13 +1536,15 @@ cd cluster
 
 ### What It Does
 
-Generates all files needed to run `terraform init`:
+Generates all files needed to run `terraform init` and Rancher API deployment:
 
 1. **Authenticates to Rancher**: Local auth → API token creation
 2. **Discovers Harvester cluster**: Lists registered clusters, prompts user to select
 3. **Generates kubeconfigs**: Via Rancher API
 4. **Creates terraform-state namespace**: On Harvester
-5. **Generates terraform.tfvars**: Pre-fills discovered values
+5. **Generates configuration files**:
+   - `deploy-api/.env` for Rancher API deployment
+   - `deploy-terraform/terraform.tfvars` for Terraform deployment
 
 ### Prerequisites
 
@@ -1488,19 +1565,31 @@ Generates all files needed to run `terraform init`:
 
 ### Generated Files
 
-After completion, the following files exist in `cluster/`:
+After completion, the following files are generated:
 
 | File | Purpose | Manual Edits Required |
 |------|---------|----------------------|
 | `kubeconfig-harvester.yaml` | Harvester admin access | No |
 | `kubeconfig-harvester-cloud-cred.yaml` | Rancher cloud credential | No |
 | `harvester-cloud-provider-kubeconfig` | RKE2 cloud provider | No |
-| `terraform-state` namespace | K8s backend for state | No |
-| `terraform.tfvars` | All cluster variables | **Yes** |
+| `terraform-state` namespace | K8s backend for state (Terraform only) | No |
+| `deploy-api/.env` | Rancher API deployment config | **Yes** |
+| `deploy-terraform/terraform.tfvars` | Terraform deployment config | **Yes** |
 
 ### Required Manual Edits
 
-After `prepare.sh`, edit `terraform.tfvars` to fill in:
+After `prepare.sh`, edit your deployment configuration:
+
+**For Rancher API**, edit `deploy-api/.env`:
+```bash
+GOLDEN_IMAGE_NAME="rke2-rocky9-golden-20260301"
+HARVESTER_NETWORK_NAME="vm-network"
+BOOTSTRAP_REGISTRY="10.0.0.100"
+HARBOR_FQDN="harbor.example.com"
+PRIVATE_CA_PEM_FILE="./private-ca.pem"
+```
+
+**For Terraform**, edit `deploy-terraform/terraform.tfvars` to fill in:
 
 ```bash
 # Golden image — must exist on Harvester
