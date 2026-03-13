@@ -25,8 +25,8 @@ All operations documented here work with both tools where applicable. For scalin
 8. [Monitoring Readiness](#8-monitoring-readiness)
 9. [Clean Destroy](#9-clean-destroy)
 10. [Nuclear Cleanup](#10-nuclear-cleanup)
-11. [rancher-api-deploy.sh Reference](#11-rancher-api-deploysh-reference)
-12. [terraform.sh Reference](#12-terraformsh-reference) (reference)
+11. [Rancher API Deployment Reference](#11-rancher-api-deployment-reference)
+12. [Terraform Deployment Reference](#12-terraform-deployment-reference)
 13. [prepare.sh Reference](#13-preparesh-reference)
 
 ---
