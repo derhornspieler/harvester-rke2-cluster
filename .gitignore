@@ -15,7 +15,7 @@ private-ca.pem
 
 # Sensitive credential files
 kubeconfig-*.yaml
-harvester-cloud-provider-kubeconfig
+harvester-cloud-provider-kubeconfig*
 vault-init.json
 .kubeconfig-rke2-operators
 
