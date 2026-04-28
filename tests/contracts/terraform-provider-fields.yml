@@ -1,0 +1,84 @@
+# Terraform provider contract test — attributes used in cluster.tf
+# Validates against `terraform providers schema -json` output.
+# Update this file when adding or removing TF attributes.
+---
+version: "v1"
+provider: "registry.terraform.io/rancher/rancher2"
+provider_version_constraint: "~> 13.1"
+
+resources:
+  rancher2_cloud_credential:
+    attributes:
+      - "name"
+      - "harvester_credential_config"
+      - "harvester_credential_config.cluster_id"
+      - "harvester_credential_config.cluster_type"
+      - "harvester_credential_config.kubeconfig_content"
+
+  rancher2_machine_config_v2:
+    attributes:
+      - "generate_name"
+      - "harvester_config"
+      - "harvester_config.vm_namespace"
+      - "harvester_config.cpu_count"
+      - "harvester_config.memory_size"
+      - "harvester_config.reserved_memory_size"
+      - "harvester_config.disk_info"
+      - "harvester_config.network_info"
+      - "harvester_config.ssh_user"
+      - "harvester_config.user_data"
+      - "harvester_config.vm_affinity"
+
+  rancher2_cluster_v2:
+    attributes:
+      - "name"
+      - "kubernetes_version"
+      - "cloud_credential_secret_name"
+      - "annotations"
+      - "rke_config"
+      - "rke_config.machine_pools"
+      - "rke_config.machine_pools.name"
+      - "rke_config.machine_pools.cloud_credential_secret_name"
+      - "rke_config.machine_pools.control_plane_role"
+      - "rke_config.machine_pools.etcd_role"
+      - "rke_config.machine_pools.worker_role"
+      - "rke_config.machine_pools.quantity"
+      - "rke_config.machine_pools.drain_before_delete"
+      - "rke_config.machine_pools.machine_config"
+      - "rke_config.machine_pools.machine_config.kind"
+      - "rke_config.machine_pools.machine_config.name"
+      - "rke_config.machine_pools.rolling_update"
+      - "rke_config.machine_pools.rolling_update.max_unavailable"
+      - "rke_config.machine_pools.rolling_update.max_surge"
+      - "rke_config.machine_pools.labels"
+      - "rke_config.machine_pools.machine_labels"
+      - "rke_config.machine_pools.annotations"
+      - "rke_config.machine_selector_config"
+      - "rke_config.machine_selector_config.config"
+      - "rke_config.machine_selector_config.machine_label_selector"
+      - "rke_config.machine_selector_config.machine_label_selector.match_labels"
+      - "rke_config.chart_values"
+      - "rke_config.machine_global_config"
+      - "rke_config.registries"
+      - "rke_config.registries.configs"
+      - "rke_config.registries.configs.hostname"
+      - "rke_config.registries.configs.auth_config_secret_name"
+      - "rke_config.registries.configs.ca_bundle"
+      - "rke_config.registries.mirrors"
+      - "rke_config.registries.mirrors.hostname"
+      - "rke_config.registries.mirrors.endpoints"
+      - "rke_config.registries.mirrors.rewrites"
+      - "rke_config.upgrade_strategy"
+      - "rke_config.upgrade_strategy.control_plane_concurrency"
+      - "rke_config.upgrade_strategy.worker_concurrency"
+      - "rke_config.etcd"
+      - "rke_config.etcd.snapshot_schedule_cron"
+      - "rke_config.etcd.snapshot_retention"
+
+  rancher2_secret_v2:
+    attributes:
+      - "cluster_id"
+      - "name"
+      - "namespace"
+      - "type"
+      - "data"

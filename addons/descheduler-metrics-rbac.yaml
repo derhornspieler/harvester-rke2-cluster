@@ -1,0 +1,29 @@
+# Grants descheduler SA permission to read metrics.k8s.io so the
+# LowNodeUtilization plugin's metricsUtilization mode can pull real
+# node/pod CPU+memory (same source as `kubectl top`).
+#
+# Required because Harvester's shipped descheduler Addon does not bind
+# the SA to metrics-server permissions. Without this the plugin fails with
+# "nodes.metrics.k8s.io ... is forbidden" on every cycle.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: descheduler-metrics
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: descheduler-metrics
+subjects:
+  - kind: ServiceAccount
+    name: descheduler
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: descheduler-metrics
+  apiGroup: rbac.authorization.k8s.io

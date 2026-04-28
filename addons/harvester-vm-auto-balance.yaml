@@ -1,0 +1,116 @@
+# Harvester VM Auto Balance addon (Experimental)
+# Ref: https://docs.harvesterhci.io/v1.7/advanced/addons/virtual-machine-auto-balance/
+#
+# Harvester SHIPS a disabled descheduler Addon at kube-system/descheduler with the
+# display label "virtual-machine-auto-balance". This manifest PATCHES that existing
+# Addon (name + namespace must match) with conservative values for RKE2-safety.
+#
+# Backed by Kubernetes Descheduler (chart: descheduler v0.33.0). With VMs carrying
+# evictionStrategy=LiveMigrateIfPossible (Harvester default), evictions become
+# live migrations (~seconds of pause), NOT restarts. CP VMs are hard-excluded via
+# the evictor's labelSelector NotIn.
+#
+# Apply with:   scripts/apply-harvester-auto-balance.sh   (enables + patches values)
+# Disable with: scripts/disable-harvester-auto-balance.sh (sets spec.enabled=false)
+#
+# Config rationale (conservative vs upstream defaults):
+#   deschedulingInterval: 15m    (upstream: 5m)    — fewer eviction cycles
+#   thresholds:       cpu/mem 20 (upstream: 30)    — only "cold" nodes below 20%
+#   targetThresholds: cpu/mem 80 (upstream: 50)    — only evict from "hot" nodes above 80%
+#     Wider band (20..80 vs 30..50) means fewer rebalance triggers during normal workload fluctuation.
+#   maxNoOfPodsToEvictPerNode: 3 (upstream: 5)    — cap concurrent per node per cycle
+#   labelSelector In kubevirt.io=virt-launcher (inherited from upstream): ONLY VMs are eligible
+#   labelSelector NotIn harvesterhci.io/machineSetName: hard-exclude RKE2 CP VMs.
+#     Add every cluster's <vmNamespace>-<clusterName>-controlplane to this list when onboarding
+#     new RKE2 clusters on this Harvester install.
+#   evictableNamespaces.exclude: RKE2/Harvester/Rancher system namespaces never touched
+---
+apiVersion: harvesterhci.io/v1beta1
+kind: Addon
+metadata:
+  name: descheduler
+  namespace: kube-system
+  labels:
+    addon.harvesterhci.io/displayName: virtual-machine-auto-balance
+    addon.harvesterhci.io/experimental: "true"
+spec:
+  enabled: true
+  chart: descheduler
+  repo: http://harvester-cluster-repo.cattle-system.svc/charts
+  version: 0.33.0
+  valuesContent: |
+    kind: Deployment
+    image:
+      repository: registry.k8s.io/descheduler/descheduler
+      pullPolicy: IfNotPresent
+    deschedulingInterval: 15m
+    replicas: 1
+    cmdOptions:
+      v: 3
+      feature-gates: EvictionsInBackground=true
+    deschedulerPolicy:
+      # Enable the metrics collector so LowNodeUtilization can pull node CPU/memory
+      # from metrics.k8s.io (Metrics Server). Without this, metricsUtilization
+      # reports "metrics client not initialized" and the plugin fails to load.
+      metricsCollector:
+        enabled: true
+      maxNoOfPodsToEvictPerNode: 3
+      profiles:
+      - name: default
+        pluginConfig:
+        - name: DefaultEvictor
+          args:
+            nodeFit: true
+            ignorePvcPods: false
+            evictLocalStoragePods: true
+            labelSelector:
+              matchExpressions:
+                # Only consider KubeVirt VMs (virt-launcher pods)...
+                - key: "kubevirt.io"
+                  operator: "In"
+                  values:
+                    - "virt-launcher"
+                # ...and hard-exclude RKE2 control-plane VMs.
+                - key: "harvesterhci.io/machineSetName"
+                  operator: "NotIn"
+                  values:
+                    - "rke2-prod-rke2-prod-controlplane"
+                    - "rke2-test-rke2-test-controlplane"
+        - name: LowNodeUtilization
+          args:
+            # Use actual node CPU/memory usage (Metrics API) instead of the default
+            # request-based math. RKE2 VMs declare small CPU requests despite burning
+            # many cores at runtime, so request-based utilization reports everything
+            # balanced even when hvst-02 is actually at 98%. metricsServer=true pulls
+            # real load via metrics.k8s.io (same source as `kubectl top`).
+            metricsUtilization:
+              metricsServer: true
+            evictableNamespaces:
+              exclude:
+                - cattle-dashboards
+                - cattle-fleet-clusters-system
+                - cattle-fleet-local-system
+                - cattle-fleet-system
+                - cattle-logging-system
+                - cattle-monitoring-system
+                - cattle-provisioning-capi-system
+                - cattle-system
+                - fleet-local
+                - harvester-system
+                - kube-system
+                - local
+                - longhorn-system
+            # thresholds = "underutilized" floor; nodes below are ELIGIBLE TARGETS to receive evicted VMs.
+            # targetThresholds = "overutilized" ceiling; nodes above are evicted FROM.
+            # With hvst-01 ≈ 60% and hvst-03 ≈ 60% typical baseline, an under-floor of 70%
+            # lets both qualify as receivers when hvst-02 pushes above 80%.
+            thresholds:
+              cpu: 70
+              memory: 65
+            targetThresholds:
+              cpu: 80
+              memory: 80
+        plugins:
+          balance:
+            enabled:
+              - LowNodeUtilization

@@ -1,0 +1,165 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mariadb-operator
+  namespace: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+rules:
+  # Core resources
+  - apiGroups: [""]
+    resources: ["configmaps", "events", "secrets", "serviceaccounts", "services"]
+    verbs: ["create", "list", "patch", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["create", "delete", "deletecollection", "list", "patch", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete", "get", "list", "patch", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Apps
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "list", "patch", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["create", "delete", "get", "list", "patch", "watch"]
+  # Authentication and authorization
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  # Batch
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["create", "list", "patch", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete", "get", "list", "patch", "watch"]
+  # cert-manager
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["create", "list", "patch", "watch"]
+  # Discovery
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["create", "get", "list", "patch", "watch"]
+  # MariaDB CRDs
+  - apiGroups: ["k8s.mariadb.com"]
+    resources:
+      - backups
+      - connections
+      - databases
+      - externalmariadbs
+      - grants
+      - mariadbs
+      - maxscales
+      - physicalbackups
+      - restores
+      - sqljobs
+      - users
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["k8s.mariadb.com"]
+    resources:
+      - backups/status
+      - connections/status
+      - databases/status
+      - externalmariadbs/status
+      - grants/status
+      - mariadbs/status
+      - maxscales/status
+      - physicalbackups/status
+      - restores/status
+      - sqljobs/status
+      - users/status
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["k8s.mariadb.com"]
+    resources:
+      - backups/finalizers
+      - connections/finalizers
+      - databases/finalizers
+      - externalmariadbs/finalizers
+      - grants/finalizers
+      - mariadbs/finalizers
+      - maxscales/finalizers
+      - physicalbackups/finalizers
+      - restores/finalizers
+      - sqljobs/finalizers
+      - users/finalizers
+    verbs: ["update"]
+  # Monitoring
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["create", "list", "patch", "watch"]
+  # PodDisruptionBudgets
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["create", "list", "patch", "watch"]
+  # RBAC — upstream requirement: operator creates per-instance RBAC for
+  # MariaDB pods. clusterroles/clusterrolebindings create+patch is a known
+  # privilege escalation surface (IMP-1). Accepted risk: operator is non-root,
+  # read-only rootfs, NetworkPolicy-constrained. Consider OPA/Gatekeeper
+  # policy to restrict creatable ClusterRole names to mariadb-* prefix.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["create", "list", "patch", "watch"]
+  # Volume snapshots
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["create", "delete", "get", "list", "patch", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mariadb-operator
+subjects:
+  - kind: ServiceAccount
+    name: mariadb-operator
+    namespace: mariadb-operator
+---
+# Leader election Role — namespaced to mariadb-operator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mariadb-operator-leader-election
+  namespace: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mariadb-operator-leader-election
+  namespace: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mariadb-operator-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: mariadb-operator
+    namespace: mariadb-operator
