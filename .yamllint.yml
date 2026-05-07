@@ -1,0 +1,67 @@
+# =============================================================================
+# yamllint configuration
+# =============================================================================
+# Relaxed configuration for a Kubernetes/Terraform repository.
+#
+# Key decisions:
+#   - Line length: disabled (K8s manifests and CRDs often have long lines)
+#   - Comments indentation: disabled (helm-style inline comments vary)
+#   - Truthy: relaxed (K8s uses 'on', 'yes', etc. in certain contexts)
+#   - Document start: disabled (not all K8s manifests use ---)
+#
+# NOTE: .tftpl files are excluded at the CI invocation level, not here,
+# because they contain ${...} Terraform interpolations that break parsing.
+# =============================================================================
+---
+extends: default
+
+rules:
+  # Disable line length - K8s manifests, CRDs, and cloud-init files
+  # routinely exceed 80/120 chars and reformatting would hurt readability
+  line-length: disable
+
+  # Allow flexible comment indentation - Helm charts and K8s manifests
+  # use varying comment styles
+  comments-indentation: disable
+
+  # Relax comment rules - cloud-init files require '#cloud-config' (no space)
+  # as a mandatory directive on line 1
+  comments:
+    require-starting-space: false
+    min-spaces-from-content: 1
+
+  # Relax truthy checking - K8s uses bare 'on' and 'yes' values in
+  # certain fields (e.g., cloud-init runcmd, boolean flags)
+  truthy:
+    allowed-values: ["true", "false", "yes", "no", "on", "off"]
+    check-keys: false
+
+  # Don't require document-start markers (---) on every file
+  document-start: disable
+
+  # Allow multiple documents in a single file (K8s multi-resource YAMLs)
+  document-end: disable
+
+  # Standard indentation: 2 spaces, consistent within each file
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+    check-multi-line-strings: false
+
+  # Braces and brackets - allow inline for short K8s constructs
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+
+  # Empty lines - allow up to 2 consecutive blank lines for readability
+  empty-lines:
+    max: 2
+
+  # Trailing spaces - enforce (these are always bugs)
+  trailing-spaces: enable
+
+  # New line at end of file - enforce
+  new-line-at-end-of-file: enable

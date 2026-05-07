@@ -1,0 +1,17 @@
+# =============================================================================
+# ShellCheck Configuration
+# =============================================================================
+# Applied to all shell scripts in this repository.
+#
+# Scripts in this repo use bash-specific features (arrays, [[ ]], BASH_REMATCH)
+# and follow the convention of set -euo pipefail with structured logging.
+# =============================================================================
+
+# Default shell dialect
+shell=bash
+
+# --- Disabled Checks ---
+# SC2034: Variable appears unused (used via Terraform templatefile() or sourced scripts)
+# SC1091: Not following sourced file (sourced files may not exist in CI context)
+# SC2155: Declare and assign separately (common pattern: local var="$(cmd)")
+disable=SC2034,SC1091,SC2155

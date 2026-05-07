@@ -1,0 +1,7 @@
+# Vendored upstream Helm chart READMEs — not our code, not linting them.
+operators/*/chart/README.md
+operators/*/chart/charts/*/README.md
+.terraform/
+.git/
+.claude/
+.wiki/

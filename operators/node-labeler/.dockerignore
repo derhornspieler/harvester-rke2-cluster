@@ -1,0 +1,8 @@
+bin/
+cover.out
+Dockerfile
+Dockerfile.cross
+.git/
+.github/
+README.md
+Makefile
