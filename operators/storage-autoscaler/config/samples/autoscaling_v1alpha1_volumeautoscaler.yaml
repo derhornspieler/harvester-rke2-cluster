@@ -1,0 +1,9 @@
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  labels:
+    app.kubernetes.io/name: storage-autoscaler
+    app.kubernetes.io/managed-by: kustomize
+  name: volumeautoscaler-sample
+spec:
+  # TODO(user): Add fields here

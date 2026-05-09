@@ -1,0 +1,160 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: cnpg-mutating-webhook-configuration
+  labels:
+    app.kubernetes.io/name: cloudnative-pg
+webhooks:
+  - name: mbackup.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /mutate-postgresql-cnpg-io-v1-backup
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["backups"]
+  - name: mcluster.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /mutate-postgresql-cnpg-io-v1-cluster
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusters"]
+  - name: mdatabase.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /mutate-postgresql-cnpg-io-v1-database
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["databases"]
+  - name: mscheduledbackup.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /mutate-postgresql-cnpg-io-v1-scheduledbackup
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["scheduledbackups"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: cnpg-validating-webhook-configuration
+  labels:
+    app.kubernetes.io/name: cloudnative-pg
+webhooks:
+  - name: vbackup.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /validate-postgresql-cnpg-io-v1-backup
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["backups"]
+  - name: vcluster.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /validate-postgresql-cnpg-io-v1-cluster
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusters"]
+  - name: vdatabase.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /validate-postgresql-cnpg-io-v1-database
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["databases"]
+  - name: vpooler.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /validate-postgresql-cnpg-io-v1-pooler
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["poolers"]
+  - name: vscheduledbackup.cnpg.io
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: cnpg-webhook-service
+        namespace: cnpg-system
+        port: 443
+        path: /validate-postgresql-cnpg-io-v1-scheduledbackup
+      caBundle: ""
+    failurePolicy: Fail
+    sideEffects: None
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["scheduledbackups"]

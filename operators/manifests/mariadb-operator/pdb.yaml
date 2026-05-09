@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mariadb-operator
+  namespace: mariadb-operator
+  labels:
+    app.kubernetes.io/name: mariadb-operator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mariadb-operator

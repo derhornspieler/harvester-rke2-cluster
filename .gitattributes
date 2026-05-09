@@ -1,0 +1,2 @@
+# Sanitize internal domain on commit, restore on checkout
+docs/**/*.md filter=sanitize-domain

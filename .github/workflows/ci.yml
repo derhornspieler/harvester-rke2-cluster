@@ -1,0 +1,346 @@
+# =============================================================================
+# CI Pipeline - Lint, Validate, and Security Scan
+# =============================================================================
+# Runs on every PR and push to main. All jobs run in parallel where possible.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Secret Scanning
+  # ---------------------------------------------------------------------------
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Terraform Formatting
+  # ---------------------------------------------------------------------------
+  terraform-fmt:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff
+
+  # ---------------------------------------------------------------------------
+  # Terraform Validation
+  # ---------------------------------------------------------------------------
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~> 1.5"
+
+      - name: Initialize (no backend)
+        working-directory: deploy-terraform
+        run: terraform init -backend=false
+
+      - name: Validate configuration
+        working-directory: deploy-terraform
+        run: terraform validate
+
+  # ---------------------------------------------------------------------------
+  # TFLint
+  # ---------------------------------------------------------------------------
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4.1.1
+        with:
+          tflint_version: "v0.54.0"
+
+      - name: Initialize TFLint
+        working-directory: deploy-terraform
+        run: tflint --init
+
+      - name: Run TFLint
+        working-directory: deploy-terraform
+        run: tflint --format compact
+
+  # ---------------------------------------------------------------------------
+  # ShellCheck
+  # ---------------------------------------------------------------------------
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Find and lint shell scripts
+        run: |
+          scripts=$(find . -name '*.sh' \
+            -not -path './.terraform/*' \
+            -not -path './.git/*' \
+            -not -path './.claude/*' \
+            | sort)
+
+          if [ -z "${scripts}" ]; then
+            echo "No shell scripts found."
+            exit 0
+          fi
+
+          echo "Linting the following scripts:"
+          echo "${scripts}"
+          echo ""
+
+          echo "${scripts}" | xargs shellcheck --severity=warning
+
+  # ---------------------------------------------------------------------------
+  # yamllint
+  # ---------------------------------------------------------------------------
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -c .yamllint.yml \
+            $(find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
+              -not -name '*.tftpl' \
+              -not -path './.terraform/*' \
+              -not -path './.git/*' \
+              -not -path './.claude/*' \
+              -not -path './operators/*/chart/*' \
+              | sort)
+
+  # ---------------------------------------------------------------------------
+  # markdownlint
+  # ---------------------------------------------------------------------------
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19.1.0
+        with:
+          globs: |
+            **/*.md
+            !.terraform/**
+            !.claude/**
+            !operators/*/chart/README.md
+            !operators/*/chart/charts/**
+
+  # ---------------------------------------------------------------------------
+  # mermaid-lint — extract every ```mermaid block from .md files and verify
+  # each parses cleanly with @mermaid-js/mermaid-cli. Catches typos that would
+  # otherwise render as a broken diagram on GitHub (e.g. mismatched braces,
+  # parens inside edge labels without quoting).
+  # ---------------------------------------------------------------------------
+  mermaid-lint:
+    name: mermaid-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Setup Node
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: '20'
+
+      - name: Install mermaid-cli
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Extract + validate mermaid blocks
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mermaid-blocks
+          fail=0
+          while IFS= read -r f; do
+            awk -v file="$f" '
+              /^```mermaid$/{block_n++; in_block=1;
+                gsub(/\//,"_",file);
+                out=sprintf("/tmp/mermaid-blocks/%s_block%d.mmd", file, block_n);
+                next}
+              /^```$/{if(in_block){in_block=0; close(out)}; next}
+              in_block{print > out}
+            ' "$f"
+          done < <(find . -name '*.md' \
+                   -not -path './.git/*' \
+                   -not -path './.terraform/*' \
+                   -not -path './.claude/*' \
+                   -not -path './operators/*/chart/*' \
+                   -not -path './node_modules/*')
+          for blk in /tmp/mermaid-blocks/*.mmd; do
+            [ -f "$blk" ] || continue
+            if ! mmdc -i "$blk" -o "/tmp/mermaid-blocks/$(basename "$blk").svg" --quiet 2>/tmp/err; then
+              fail=$((fail+1))
+              echo "::error file=$blk::Mermaid syntax error"
+              head -10 /tmp/err
+              echo "---"
+            fi
+          done
+          if [ $fail -gt 0 ]; then
+            echo "::error::$fail mermaid block(s) failed to render"
+            exit 1
+          fi
+          echo "All mermaid blocks render cleanly."
+
+  # ---------------------------------------------------------------------------
+  # Checkov - Terraform Security Scanning
+  # ---------------------------------------------------------------------------
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@f99709f8ccc3496220c987b7d8729653237c23dc # v12.1347.0
+        with:
+          directory: deploy-terraform
+          framework: terraform
+          quiet: true
+          soft_fail: false
+          output_format: cli
+          skip_check: "CKV_TF_1,CKV_TF_2"
+
+  # ---------------------------------------------------------------------------
+  # Go Lint & Test — Disabled: primary pipeline is GitLab CI.
+  # Operator source synced from harvester-rke2-svcs (which also runs CI).
+  # Uncomment for standalone clusters without GitLab CI.
+  # ---------------------------------------------------------------------------
+  # go-lint:
+  #   name: Go Lint
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       operator: [node-labeler, storage-autoscaler]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+  #
+  #     - name: Setup Go
+  #       uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+  #       with:
+  #         go-version-file: operators/${{ matrix.operator }}/go.mod
+  #
+  #     - name: Go vet
+  #       working-directory: operators/${{ matrix.operator }}
+  #       run: go vet ./...
+  #
+  #     - name: Go fmt check
+  #       working-directory: operators/${{ matrix.operator }}
+  #       run: |
+  #         unformatted=$(gofmt -l .)
+  #         if [ -n "$unformatted" ]; then
+  #           echo "Unformatted files:"
+  #           echo "$unformatted"
+  #           exit 1
+  #         fi
+  #
+  # go-test:
+  #   name: Go Test
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       operator: [node-labeler, storage-autoscaler]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+  #
+  #     - name: Setup Go
+  #       uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+  #       with:
+  #         go-version-file: operators/${{ matrix.operator }}/go.mod
+  #
+  #     - name: Setup envtest binaries
+  #       working-directory: operators/${{ matrix.operator }}
+  #       run: |
+  #         go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+  #         ENVTEST_ASSETS=$(setup-envtest use -p path)
+  #         echo "KUBEBUILDER_ASSETS=${ENVTEST_ASSETS}" >> "$GITHUB_ENV"
+  #
+  #     - name: Run tests
+  #       working-directory: operators/${{ matrix.operator }}
+  #       run: go test -race -coverprofile=coverage.out ./...
+  #
+  #     - name: Show coverage
+  #       working-directory: operators/${{ matrix.operator }}
+  #       run: go tool cover -func=coverage.out
+
+  # ---------------------------------------------------------------------------
+  # Hadolint — Disabled: primary pipeline is GitLab CI.
+  # Uncomment for standalone clusters without GitLab CI.
+  # ---------------------------------------------------------------------------
+  # hadolint:
+  #   name: Hadolint
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       operator: [node-labeler, storage-autoscaler]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+  #
+  #     - name: Lint Dockerfile
+  #       uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+  #       with:
+  #         dockerfile: operators/${{ matrix.operator }}/Dockerfile
+
+  # ---------------------------------------------------------------------------
+  # SAST — Semgrep
+  # ---------------------------------------------------------------------------
+  semgrep:
+    name: SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.2.2
+
+      - name: Semgrep scan
+        run: semgrep scan --config auto --error --exclude 'deploy-terraform' --exclude 'operators/upstream' .
+        env:
+          SEMGREP_RULES: auto

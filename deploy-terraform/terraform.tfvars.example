@@ -1,0 +1,140 @@
+# =============================================================================
+# RKE2 Cluster — Terraform Variables
+# =============================================================================
+# Generate credential files first:  cd cluster && ./prepare.sh
+# Then fill in the values below and run:  terraform plan
+# =============================================================================
+
+# Rancher Connection
+rancher_url      = "https://rancher.example.com"
+rancher_token    = "token-xxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+rancher_insecure = true  # Set to false and provide private_ca_pem for production
+
+# Harvester
+harvester_kubeconfig_path       = "./kubeconfig-harvester.yaml"
+harvester_cluster_id            = "c-xxxxx"
+harvester_cloud_credential_name = "my-harvester-credential"
+
+# Cluster
+cluster_name       = "rke2-prod"
+kubernetes_version = "v1.34.2+rke2r1"
+cni                = "cilium"
+traefik_lb_ip        = "192.168.48.2"
+cilium_lb_pool_start = "192.168.48.2"
+cilium_lb_pool_stop  = "192.168.48.20"
+
+# Harvester Networking
+vm_namespace                = "rke2-prod"
+harvester_network_name      = "vm-network"
+harvester_network_namespace = "default"
+# harvester_services_network_name      = "services-network"
+# harvester_services_network_namespace = "default"
+
+# Golden Image (required -- must already exist on Harvester)
+golden_image_name = "rke2-rocky9-golden-20260227"
+
+# Harvester namespace that holds the golden image. Typically "default" (shared
+# image catalog), distinct from vm_namespace (per-cluster). Defaults to "default".
+# harvester_image_namespace = "default"
+
+# Registry / Bootstrap (required) — replace <your-harbor> with your registry FQDN
+bootstrap_registry    = "<your-harbor>"
+harbor_fqdn           = "<your-harbor>"
+cilium_image_registry = "<your-harbor>/quay.io"  # chart appends "/cilium/<image>"
+
+# Harbor Proxy-Cache Mirrors (optional -- defaults shown)
+# harbor_registry_mirrors = ["docker.io", "quay.io", "ghcr.io", "gcr.io", "registry.k8s.io", "docker.elastic.co", "registry.gitlab.com", "docker-registry1.mariadb.com", "docker-registry2.mariadb.com", "docker-registry3.mariadb.com", "dhi.io"]
+
+# Private CA (required -- PEM-encoded certificate chain for registry TLS)
+private_ca_pem = <<-EOT
+-----BEGIN CERTIFICATE-----
+<your CA certificate here>
+-----END CERTIFICATE-----
+EOT
+
+# Optional: if bootstrap registry uses a different CA than private_ca_pem
+# bootstrap_registry_ca_pem = <<-EOT
+# -----BEGIN CERTIFICATE-----
+# <bootstrap registry CA>
+# -----END CERTIFICATE-----
+# EOT
+
+# Control Plane Pool
+controlplane_count     = 3
+controlplane_cpu       = "4"
+controlplane_memory    = "16"
+controlplane_disk_size = 80
+
+# General Worker Pool
+general_cpu       = "4"
+general_memory    = "16"
+general_disk_size = 60
+general_min_count = 4
+general_max_count = 10
+
+# Compute Worker Pool
+compute_cpu       = "16"
+compute_memory    = "32"
+compute_disk_size = 80
+compute_min_count = 1
+compute_max_count = 10
+
+# Database Worker Pool
+database_cpu       = "4"
+database_memory    = "24"
+database_disk_size = 80
+database_min_count = 4
+database_max_count = 10
+
+# NTP Servers (optional -- if unset, chrony uses default public pools)
+# ntp_servers = "ntp1.internal.example.com ntp2.internal.example.com"
+
+# Docker Hub Auth (optional -- only needed if pull rate limits are an issue)
+# dockerhub_username = "your-dockerhub-user"
+# dockerhub_token    = "dckr_pat_xxxxx"
+
+# Cloud Provider
+harvester_cloud_provider_kubeconfig_path = "./harvester-cloud-provider-kubeconfig"
+
+# SSH
+ssh_user = "rocky"
+ssh_authorized_keys = [
+  "ssh-ed25519 AAAA... user@host",
+]
+
+# Operator Deployment (optional -- deploys node-labeler + storage-autoscaler)
+# deploy_operators      = true
+# harbor_admin_user     = "admin"
+# harbor_admin_password = "your-harbor-admin-password"
+
+# Database Operators (optional -- requires deploy_operators = true)
+# deploy_cnpg              = true
+# deploy_mariadb_operator  = true
+# deploy_redis_operator    = true
+
+# Per-pool live migration policy (KubeVirt allowPostCopy).
+# Recommended defaults are set by the variables; override per-cluster here if
+# the workload mix differs. See docs/operations.md for trade-off details.
+# cp_allow_post_copy       = false  # etcd leader loss risk too high
+# general_allow_post_copy  = false  # mixed workloads — safer default
+# compute_allow_post_copy  = false  # mixed workloads — safer default
+# database_allow_post_copy = true   # busy Postgres benefits from post-copy
+
+# -----------------------------------------------------------------------------
+# Cluster Autoscaler — Helm chart + image
+# -----------------------------------------------------------------------------
+# Override the default upstream paths to point at your Harbor proxy-cache when
+# running airgapped. Harbor project convention: upstream URL hostname
+# (e.g. kubernetes.github.io) → Harbor project name.
+# cluster_autoscaler_chart_repository = "oci://<your-harbor>/kubernetes.github.io/autoscaler"
+cluster_autoscaler_chart_version    = "9.40.0"
+# cluster_autoscaler_image_repository = "<your-harbor>/registry.k8s.io/autoscaling/cluster-autoscaler"
+cluster_autoscaler_image_tag        = "v1.34.3"
+
+# -----------------------------------------------------------------------------
+# Storage Autoscaler — in-house chart + image (REQUIRED — set to your registry)
+# -----------------------------------------------------------------------------
+storage_autoscaler_chart_repository = "oci://<your-harbor>/library"
+storage_autoscaler_chart_version    = "0.7.0"
+storage_autoscaler_image_repository = "<your-harbor>/library/storage-autoscaler"
+storage_autoscaler_image_tag        = "v0.7.0"

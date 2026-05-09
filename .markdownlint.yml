@@ -1,0 +1,98 @@
+# =============================================================================
+# markdownlint configuration (markdownlint-cli2)
+# =============================================================================
+# Tuned for a technical infrastructure repository with:
+#   - Mermaid diagrams (requires inline HTML)
+#   - Long configuration tables (lines exceed 80 chars)
+#   - Code blocks with shell output
+#   - Terraform HCL examples
+# =============================================================================
+
+# MD013 - Line length
+# Disabled: tables, mermaid blocks, and URLs routinely exceed any reasonable
+# limit. Enforcing line length on prose hurts readability of technical docs.
+MD013: false
+
+# MD033 - Inline HTML
+# Allow HTML elements used in mermaid diagrams (<br/>, <br>, subgraph labels)
+# and badge images. This is the most common false positive in K8s/infra docs.
+MD033:
+  allowed_elements:
+    - br
+    - br/
+    - details
+    - summary
+    - img
+    - a
+    - sub
+    - sup
+
+# MD041 - First line heading
+# Allow files that start with badges, front matter, or comments
+MD041: false
+
+# MD024 - Multiple headings with same content
+# Allow: troubleshooting docs reuse heading names across sections
+# (e.g., "Symptom", "Solution" repeated per issue)
+MD024:
+  siblings_only: true
+
+# MD026 - Trailing punctuation in heading
+# Allow colons in headings (common in reference docs)
+MD026:
+  punctuation: ".,;!?"
+
+# MD034 - Bare URL
+# Disabled: README and docs contain raw URLs in code blocks and examples
+MD034: false
+
+# MD031 - Fenced code blocks should be surrounded by blank lines
+# Disabled: troubleshooting docs use tight formatting with lists + code blocks
+MD031: false
+
+# MD032 - Lists should be surrounded by blank lines
+# Disabled: technical docs use lists inline with surrounding content
+MD032: false
+
+# MD036 - Emphasis used instead of a heading
+# Disabled: troubleshooting docs use **bold** as visual separators within sections
+MD036: false
+
+# MD040 - Fenced code blocks should have a language specified
+MD040: false
+
+# MD046 - Code block style
+# Enforce fenced (```) style, not indented
+MD046:
+  style: fenced
+
+# MD048 - Code fence style
+# Enforce backtick fences (not tildes)
+MD048:
+  style: backtick
+
+# MD049 - Emphasis style
+# Disabled: vendored upstream chart READMEs use mixed styles (asterisk +
+# underscore); we don't rewrite them. Our own docs are lightly enforced via
+# code review, not a hard CI gate.
+MD049: false
+
+# MD050 - Strong emphasis style
+# Enforce double asterisks for consistency
+MD050:
+  style: asterisk
+
+# MD028 - No blanks inside blockquote
+# Disabled: technical docs use multi-paragraph blockquotes (e.g., communication
+# templates with separator blank lines for readability) which trigger this rule.
+MD028: false
+
+# MD029 - Ordered list item prefix
+# Disabled: numbered lists with interleaved code blocks (common in step-by-step
+# runbooks) use 1/2/3 style; the default "1/1/1" alternative makes step numbers
+# visually meaningless. Allow either style.
+MD029: false
+
+# MD014 - Dollar signs before commands without output
+# Disabled: shell-command snippets with `$` prefix are conventional.
+MD014: false

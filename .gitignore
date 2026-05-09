@@ -1,0 +1,26 @@
+# Terraform state, plans, and vars (credential-bearing)
+.terraform/
+deploy-terraform/.terraform/
+deploy-terraform/.terraform-*/
+*.tfstate*
+*.tfplan
+tfplan*
+terraform.tfvars
+deploy-terraform/terraform.tfvars
+deploy-terraform/rke2-*.tfvars
+
+# Shell script environment config
+.env
+.env.*
+!.env.example
+
+# Credential & key material
+private-ca.pem
+kubeconfig-*.yaml
+harvester-cloud-provider-kubeconfig*
+vault-init.json
+.kubeconfig-rke2-operators
+
+# Rendered manifests and build artifacts
+.rendered/
+operators/images/*.tar.gz

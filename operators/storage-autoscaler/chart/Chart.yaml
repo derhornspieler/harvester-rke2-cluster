@@ -1,0 +1,12 @@
+apiVersion: v2
+name: storage-autoscaler
+description: Auto-expands Kubernetes PVCs based on Prometheus metrics.
+type: application
+version: 0.7.0
+appVersion: "v0.7.0"
+kubeVersion: ">=1.30.0-0"
+maintainers:
+  - name: Platform Team
+    email: platform@example.com
+sources:
+  - https://gitlab.example.com/infra_and_platform_services/harvester-rke2-svcs
